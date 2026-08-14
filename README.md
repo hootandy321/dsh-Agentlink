@@ -1,10 +1,10 @@
 # DSH Orchestrator
 
-![DSH Orchestrator cover](assets/dsh-orchestrator-cover.png)
+![DSH Orchestrator cover](assets/dsh-orchestrator-cover.webp)
 
 **English** | [简体中文](README.zh-CN.md)
 
-DSH Orchestrator is a plugin that lets you use DeepSeek Harness (DSH) from the AI work tool you already use. Your primary agent can delegate implementation, research, debugging, and long-log work to DSH, then observe, continue, or cancel those sessions without leaving its normal workflow. Codex is supported today; Claude Code, Workbunny, and other popular AI coding and agent tools are planned.
+DSH Orchestrator is a plugin that lets you use DeepSeek Harness (DSH) from the AI work tool you already use. Your primary agent can delegate implementation, research, debugging, and long-log work to DSH, then observe, continue, or cancel those sessions without leaving its normal workflow. Codex is supported today; Claude Code, Workbuddy, and other popular AI coding and agent tools are planned.
 
 ## Installation
 
@@ -66,7 +66,7 @@ DSH Orchestrator is a caller-side plugin, not a DSH Cordis bundle. Do not instal
 
 DSH combines persistent sessions, tool execution, subagents, and human supervision for complex work. DSH Orchestrator lets Codex discuss and coordinate with that second harness while you stay in the same workflow.
 
-![Codex coordinating work with DeepSeek Harness](assets/codex-dsh-collaboration.png)
+![Codex coordinating work with DeepSeek Harness](assets/codex-dsh-collaboration.webp)
 
 *Codex keeps planning and supervision; DSH provides the execution harness, sessions, and workers.*
 
@@ -74,7 +74,7 @@ DSH combines persistent sessions, tool execution, subagents, and human supervisi
 
 A native subagent remains inside the caller's own agent tree. DSH Orchestrator adds a separate, user-configured harness: its sessions stay visible in DSH Web, can use DSH's own workers and model route, and can be observed, continued, or canceled by Codex.
 
-![DSH Orchestrator compared with native subagents](assets/dsh-vs-native-subagents.png)
+![DSH Orchestrator compared with native subagents](assets/dsh-vs-native-subagents.webp)
 
 *Use the primary agent for judgment and validation, while DSH handles larger execution workloads through the model you configured there.*
 
@@ -115,7 +115,7 @@ Normal delegation has no model argument. Configure the desired model only when i
 
 These are planned directions, not implemented capabilities or release commitments.
 
-1. **Claude and other entrypoints** — explore Claude Code, Claude Desktop MCP, Workbunny, and other callers connected to the same official DSH Web Host.
+1. **Claude and other entrypoints** — explore Claude Code, Claude Desktop MCP, Workbuddy, and other callers connected to the same official DSH Web Host.
 2. **Agent invocation and information transport** — improve prompt organization, context packaging, output digests, and compression while keeping questions, approvals, errors, and final answers reliable.
 3. **More integrations** — expand after the Codex bridge and its compatibility contract stabilize.
 

@@ -1,10 +1,10 @@
 # DSH Orchestrator
 
-![DSH Orchestrator 首图](assets/dsh-orchestrator-cover.png)
+![DSH Orchestrator 首图](assets/dsh-orchestrator-cover.webp)
 
 [English](README.md) | **简体中文**
 
-DSH Orchestrator 是一个让你直接在原本的 AI 工作工具里调用 DeepSeek Harness（DSH）协作的插件。你的主 agent 可以把实现、调研、调试和长日志整理等任务交给 DSH，再在原有工作流中观察、继续或取消对应会话。当前支持 Codex，后续计划持续适配 Claude Code、Workbunny 等主流 AI coding 与 agent 工具。
+DSH Orchestrator 是一个让你直接在原本的 AI 工作工具里调用 DeepSeek Harness（DSH）协作的插件。你的主 agent 可以把实现、调研、调试和长日志整理等任务交给 DSH，再在原有工作流中观察、继续或取消对应会话。当前支持 Codex，后续计划持续适配 Claude Code、Workbuddy 等主流 AI coding 与 agent 工具。
 
 ## 安装
 
@@ -66,7 +66,7 @@ DSH Orchestrator 是安装在调用方一侧的插件，不是 DSH Cordis bundle
 
 DSH 为复杂任务提供持久 session、工具调用、subagent 和人工监督等能力。DSH Orchestrator 让 Codex 能够与这套独立 harness 讨论并协作，同时不离开你原本的工作入口。
 
-![Codex 与 DeepSeek Harness 协作](assets/codex-dsh-collaboration.png)
+![Codex 与 DeepSeek Harness 协作](assets/codex-dsh-collaboration.webp)
 
 *Codex 继续负责规划、讨论和总控，DSH 负责执行 harness、会话与 worker。*
 
@@ -74,7 +74,7 @@ DSH 为复杂任务提供持久 session、工具调用、subagent 和人工监�
 
 原生 subagent 仍属于调用方自己的 agent tree。DSH Orchestrator 接入的是一套由用户配置的独立 harness：会话可以在 DSH Web 持续查看，使用 DSH 自己的 worker 与模型路由，并由 Codex 观察、继续或取消。
 
-![DSH Orchestrator 与原生 subagent 对比](assets/dsh-vs-native-subagents.png)
+![DSH Orchestrator 与原生 subagent 对比](assets/dsh-vs-native-subagents.webp)
 
 *主 agent 专注判断和验收，DSH 使用你配置的模型承担更大规模的执行工作。*
 
@@ -115,7 +115,7 @@ DSH 为复杂任务提供持久 session、工具调用、subagent 和人工监�
 
 以下内容是计划方向，不代表已经实现或 release 承诺。
 
-1. **Claude 与其他入口** — 探索 Claude Code、Claude Desktop MCP、Workbunny 等调用方接入同一个官方 DSH Web Host。
+1. **Claude 与其他入口** — 探索 Claude Code、Claude Desktop MCP、Workbuddy 等调用方接入同一个官方 DSH Web Host。
 2. **Agent 调用与信息传输** — 优化 prompt 组织、上下文打包、输出摘要和压缩策略，同时确保问题、审批、错误和最终答案可靠传输。
 3. **更多集成** — 待 Codex bridge 与兼容性约定稳定后继续扩展。
 
