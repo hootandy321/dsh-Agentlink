@@ -27,6 +27,7 @@
     "docs/",
     "skill/",
     "README.md",
+    "README.zh-CN.md",
     "CONTRIBUTING.md",
     "SECURITY.md",
     "KNOWN_ISSUES.md",
@@ -34,12 +35,14 @@
   ],
   "bin": {
     "dsh-orchestrator": "dist/index.js",
-    "dsh-orchestrator-doctor": "dist/doctor.js"
+    "dsh-orchestrator-doctor": "dist/doctor.js",
+    "dsh-orchestrator-setup": "dist/setup-codex.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsx src/index.ts",
     "doctor": "tsx src/doctor.ts",
+    "setup": "npm run build && node dist/setup-codex.js",
     "test": "node --import tsx --test test/**/*.test.ts",
     "check": "npm run build && npm test",
     "prepack": "npm run check"

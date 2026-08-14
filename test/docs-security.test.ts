@@ -4,14 +4,35 @@ import { test } from "node:test";
 
 const root = new URL("../", import.meta.url);
 
-test("README and skill preserve connect-only, approval, cancellation, and recovery safety contracts", async () => {
-  const [readme, skill] = await Promise.all([
+test("public docs and skill preserve connect-only, approval, cancellation, and recovery safety contracts", async () => {
+  const [readme, architecture, manualConfiguration, skill] = await Promise.all([
     readFile(new URL("README.md", root), "utf8"),
+    readFile(new URL("docs/architecture.md", root), "utf8"),
+    readFile(new URL("docs/manual-configuration.md", root), "utf8"),
     readFile(new URL("skill/codex-dsh/SKILL.md", root), "utf8"),
   ]);
   for (const phrase of [
     "connect-only",
     "approval_mode = \"prompt\"",
+    "dsh_release_workspace",
+    "not a DSH Cordis bundle",
+    "Do not install it with `dsh plugin --profile ... add ...`",
+  ]) {
+    assert.equal(readme.includes(phrase), true, `README lost required safety phrase: ${phrase}`);
+  }
+  for (const phrase of [
+    "approval_mode = \"prompt\"",
+    "DSH_ALLOW_REMOTE_HOST=true",
+    "not a DSH Cordis bundle",
+    "Do not install it with `dsh plugin --profile ... add ...`",
+  ]) {
+    assert.equal(
+      manualConfiguration.includes(phrase),
+      true,
+      `manual configuration doc lost required safety phrase: ${phrase}`,
+    );
+  }
+  for (const phrase of [
     "never automatically allows",
     "approval policy `never`",
     "at-least-once with deterministic dedupe",
@@ -23,10 +44,12 @@ test("README and skill preserve connect-only, approval, cancellation, and recove
     "dsh_release_workspace",
     "Full simultaneous multi-Codex plus interactive-Web conflict freedom is not claimed",
     "Real browser-visible end-to-end interaction",
-    "not a DSH Cordis bundle",
-    "Do not install it with `dsh plugin --profile ... add ...`",
   ]) {
-    assert.equal(readme.includes(phrase), true, `README lost required safety phrase: ${phrase}`);
+    assert.equal(
+      architecture.includes(phrase),
+      true,
+      `architecture doc lost required safety phrase: ${phrase}`,
+    );
   }
   for (const phrase of [
     "never start",
