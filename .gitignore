@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.DS_Store
+coverage/
+*.log
+*.tgz
+.env
+.env.*
+!.env.example
+.dsh-bridge/

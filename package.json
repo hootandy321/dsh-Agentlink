@@ -1,0 +1,61 @@
+{
+  "name": "dsh-orchestrator",
+  "version": "0.1.0-alpha.1",
+  "private": true,
+  "description": "Codex-side orchestration bridge for the official DeepSeek Harness Web Host.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hootandy321/dsh-orchestrator.git"
+  },
+  "homepage": "https://github.com/hootandy321/dsh-orchestrator#readme",
+  "bugs": {
+    "url": "https://github.com/hootandy321/dsh-orchestrator/issues"
+  },
+  "keywords": [
+    "codex",
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "mcp",
+    "agent-collaboration"
+  ],
+  "type": "module",
+  "files": [
+    "assets/",
+    "dist/",
+    "docs/",
+    "skill/",
+    "README.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "KNOWN_ISSUES.md",
+    "LICENSE"
+  ],
+  "bin": {
+    "dsh-orchestrator": "dist/index.js",
+    "dsh-orchestrator-doctor": "dist/doctor.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/index.ts",
+    "doctor": "tsx src/doctor.ts",
+    "test": "node --import tsx --test test/**/*.test.ts",
+    "check": "npm run build && npm test",
+    "prepack": "npm run check"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.5",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3",
+    "ws": "^8.18.3"
+  }
+}
