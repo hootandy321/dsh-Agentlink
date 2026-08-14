@@ -6,31 +6,6 @@
 
 DSH Orchestrator 是一个让你直接在原本的 AI 工作工具里调用 DeepSeek Harness（DSH）协作的插件。你的主 agent 可以把实现、调研、调试和长日志整理等任务交给 DSH，再在原有工作流中观察、继续或取消对应会话。当前支持 Codex，后续计划持续适配 Claude Code、Workbunny 等主流 AI coding 与 agent 工具。
 
-## 为什么需要 DSH Orchestrator？
-
-### 利用 DSH 的 Harness 能力
-
-DSH 为复杂任务提供持久 session、工具调用、subagent 和人工监督等能力。DSH Orchestrator 让 Codex 能够与这套独立 harness 讨论并协作，同时不离开你原本的工作入口。
-
-![Codex 与 DeepSeek Harness 协作](assets/codex-dsh-collaboration.png)
-
-*Codex 继续负责规划、讨论和总控，DSH 负责执行 harness、会话与 worker。*
-
-### 不只是再增加一个原生 subagent
-
-原生 subagent 仍属于调用方自己的 agent tree。DSH Orchestrator 接入的是一套由用户配置的独立 harness：会话可以在 DSH Web 持续查看，使用 DSH 自己的 worker 与模型路由，并由 Codex 观察、继续或取消。
-
-![DSH Orchestrator 与原生 subagent 对比](assets/dsh-vs-native-subagents.png)
-
-*主 agent 专注判断和验收，DSH 使用你配置的模型承担更大规模的执行工作。*
-
-### 省时间、也省成本
-
-- **省时间。** 把实现、检索、资料提取和长日志整理等执行型任务交给你在 DSH 中配置的高速模型，例如 DeepSeek V4 路由，主 agent 可以继续规划和验收。
-- **省成本。** 把大量执行 token 路由到成本更低的 DeepSeek 模型，可以减少对昂贵主模型的消耗。
-
-实际速度和费用取决于模型、服务商、部署方式、网络与任务本身。
-
 ## 安装
 
 安装前先准备环境：只需要 **Node.js 22+**、**Codex** 和可以正常运行的 **DSH CLI**。先在 DSH 中配置一次你希望使用的模型，之后 DSH Orchestrator 会自动使用当前路由。
@@ -85,6 +60,39 @@ DSH 为复杂任务提供持久 session、工具调用、subagent 和人工监�
 
 DSH Orchestrator 是安装在调用方一侧的插件，不是 DSH Cordis bundle；请不要使用 `dsh plugin --profile ... add ...` 安装。
 
+## 为什么需要 DSH Orchestrator？
+
+### 利用 DSH 的 Harness 能力
+
+DSH 为复杂任务提供持久 session、工具调用、subagent 和人工监督等能力。DSH Orchestrator 让 Codex 能够与这套独立 harness 讨论并协作，同时不离开你原本的工作入口。
+
+![Codex 与 DeepSeek Harness 协作](assets/codex-dsh-collaboration.png)
+
+*Codex 继续负责规划、讨论和总控，DSH 负责执行 harness、会话与 worker。*
+
+### 不只是再增加一个原生 subagent
+
+原生 subagent 仍属于调用方自己的 agent tree。DSH Orchestrator 接入的是一套由用户配置的独立 harness：会话可以在 DSH Web 持续查看，使用 DSH 自己的 worker 与模型路由，并由 Codex 观察、继续或取消。
+
+![DSH Orchestrator 与原生 subagent 对比](assets/dsh-vs-native-subagents.png)
+
+*主 agent 专注判断和验收，DSH 使用你配置的模型承担更大规模的执行工作。*
+
+### 省时间、也省成本
+
+- **省时间。** 把实现、检索、资料提取和长日志整理等执行型任务交给你在 DSH 中配置的高速模型，例如 DeepSeek V4 路由，主 agent 可以继续规划和验收。
+- **省成本。** 把大量执行 token 路由到成本更低的 DeepSeek 模型，可以减少对昂贵主模型的消耗。
+
+实际速度和费用取决于模型、服务商、部署方式、网络与任务本身。完成安装后，你仍然可以像平常一样使用 Codex，只在适合交给 DSH 执行时直接让它发起委派即可。
+
+## 如何使用
+
+启动 `dsh web` 并让 Codex 重新加载 MCP 配置后，直接用自然语言告诉 Codex，例如：
+
+> 使用 DSH Orchestrator，把当前仓库里的这个实现任务委派给 DSH。保持会话在 DSH Web 可见，向我报告进度，任何 approval 都先询问我。
+
+之后 Codex 可以委派任务、观察事件、继续同一会话、与你一起回答 DSH 的问题，或取消任务。打开 `http://127.0.0.1:3080`，即可在 DSH Web 查看并操作同一个 session。
+
 ## MCP 工具
 
 - `dsh_host_status` — 读取 connect-only Host 状态与 capabilities
@@ -102,14 +110,6 @@ DSH Orchestrator 是安装在调用方一侧的插件，不是 DSH Cordis bundle
 - `dsh_release_workspace` — 显式释放持久化 workspace claim，但不关闭 DSH session
 
 正常委派没有 model 参数。目标模型只在安装或调整 DSH 时配置。每次 delegate 都会读取 `session.models.current` 并信任 Host 返回的 `routable`；bridge 不会修改模型，也不会根据 catalog group 自行推导 routability。
-
-## 如何使用
-
-启动 `dsh web` 并让 Codex 重新加载 MCP 配置后，直接用自然语言告诉 Codex，例如：
-
-> 使用 DSH Orchestrator，把当前仓库里的这个实现任务委派给 DSH。保持会话在 DSH Web 可见，向我报告进度，任何 approval 都先询问我。
-
-之后 Codex 可以委派任务、观察事件、继续同一会话、与你一起回答 DSH 的问题，或取消任务。打开 `http://127.0.0.1:3080`，即可在 DSH Web 查看并操作同一个 session。
 
 ## 后续方向
 

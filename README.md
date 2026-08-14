@@ -6,31 +6,6 @@
 
 DSH Orchestrator is a plugin that lets you use DeepSeek Harness (DSH) from the AI work tool you already use. Your primary agent can delegate implementation, research, debugging, and long-log work to DSH, then observe, continue, or cancel those sessions without leaving its normal workflow. Codex is supported today; Claude Code, Workbunny, and other popular AI coding and agent tools are planned.
 
-## Why DSH Orchestrator?
-
-### Use DSH's Harness capabilities
-
-DSH combines persistent sessions, tool execution, subagents, and human supervision for complex work. DSH Orchestrator lets Codex discuss and coordinate with that second harness while you stay in the same workflow.
-
-![Codex coordinating work with DeepSeek Harness](assets/codex-dsh-collaboration.png)
-
-*Codex keeps planning and supervision; DSH provides the execution harness, sessions, and workers.*
-
-### More than another native subagent
-
-A native subagent remains inside the caller's own agent tree. DSH Orchestrator adds a separate, user-configured harness: its sessions stay visible in DSH Web, can use DSH's own workers and model route, and can be observed, continued, or canceled by Codex.
-
-![DSH Orchestrator compared with native subagents](assets/dsh-vs-native-subagents.png)
-
-*Use the primary agent for judgment and validation, while DSH handles larger execution workloads through the model you configured there.*
-
-### Save time and cost
-
-- **Save time.** Route implementation, research, extraction, and long-log work to a fast model configured in DSH, such as a DeepSeek V4 route, while your primary agent keeps planning and validating.
-- **Save money.** Moving execution-heavy workloads to a lower-cost DeepSeek route can reduce consumption on more expensive primary models.
-
-Actual speed and cost depend on the selected model, provider, deployment, network, and task.
-
 ## Installation
 
 Prepare the environment first: you need **Node.js 22+**, **Codex**, and a working **DSH CLI**. Configure your preferred model in DSH once; DSH Orchestrator uses that live route automatically.
@@ -85,6 +60,39 @@ Use `/mcp` or Codex Settings to confirm that `dsh_collab` is connected. For a fu
 
 DSH Orchestrator is a caller-side plugin, not a DSH Cordis bundle. Do not install it with `dsh plugin --profile ... add ...`.
 
+## Why DSH Orchestrator?
+
+### Use DSH's Harness capabilities
+
+DSH combines persistent sessions, tool execution, subagents, and human supervision for complex work. DSH Orchestrator lets Codex discuss and coordinate with that second harness while you stay in the same workflow.
+
+![Codex coordinating work with DeepSeek Harness](assets/codex-dsh-collaboration.png)
+
+*Codex keeps planning and supervision; DSH provides the execution harness, sessions, and workers.*
+
+### More than another native subagent
+
+A native subagent remains inside the caller's own agent tree. DSH Orchestrator adds a separate, user-configured harness: its sessions stay visible in DSH Web, can use DSH's own workers and model route, and can be observed, continued, or canceled by Codex.
+
+![DSH Orchestrator compared with native subagents](assets/dsh-vs-native-subagents.png)
+
+*Use the primary agent for judgment and validation, while DSH handles larger execution workloads through the model you configured there.*
+
+### Save time and cost
+
+- **Save time.** Route implementation, research, extraction, and long-log work to a fast model configured in DSH, such as a DeepSeek V4 route, while your primary agent keeps planning and validating.
+- **Save money.** Moving execution-heavy workloads to a lower-cost DeepSeek route can reduce consumption on more expensive primary models.
+
+Actual speed and cost depend on the selected model, provider, deployment, network, and task. Once installed, you can keep working in Codex as usual and simply ask it to delegate when DSH is the better execution path.
+
+## Use it
+
+Once `dsh web` is running and Codex has reloaded the MCP configuration, ask Codex in normal language, for example:
+
+> Use DSH Orchestrator to delegate this implementation to DSH in the current repository. Keep it visible in DSH Web, report progress, and ask me before any approval.
+
+Codex can then delegate the task, observe its event stream, continue the same session, answer questions with you, or cancel work. Open `http://127.0.0.1:3080` to inspect and interact with the same session in DSH Web.
+
 ## MCP tools
 
 - `dsh_host_status` — connect-only Host state and capabilities
@@ -102,14 +110,6 @@ DSH Orchestrator is a caller-side plugin, not a DSH Cordis bundle. Do not instal
 - `dsh_release_workspace` — explicitly release a persistent bridge workspace claim without closing the DSH session
 
 Normal delegation has no model argument. Configure the desired model only when installing or adjusting DSH. Each delegate reads `session.models.current` and trusts the Host's `routable` boolean; it neither changes the model nor derives routability from catalog groups.
-
-## Use it
-
-Once `dsh web` is running and Codex has reloaded the MCP configuration, ask Codex in normal language, for example:
-
-> Use DSH Orchestrator to delegate this implementation to DSH in the current repository. Keep it visible in DSH Web, report progress, and ask me before any approval.
-
-Codex can then delegate the task, observe its event stream, continue the same session, answer questions with you, or cancel work. Open `http://127.0.0.1:3080` to inspect and interact with the same session in DSH Web.
 
 ## Roadmap
 
