@@ -2,6 +2,8 @@
 
 ![DSH Orchestrator 首图](assets/dsh-orchestrator-cover.webp)
 
+[![CI](https://github.com/hootandy321/dsh-orchestrator/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hootandy321/dsh-orchestrator/actions/workflows/ci.yml) [![GitHub Stars](https://img.shields.io/github/stars/hootandy321/dsh-orchestrator?style=flat-square&logo=github)](https://github.com/hootandy321/dsh-orchestrator/stargazers) [![License: MIT](https://img.shields.io/github/license/hootandy321/dsh-orchestrator?style=flat-square)](LICENSE) [![Node.js 22+](https://img.shields.io/badge/Node.js-22%2B-339933?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org/) [![DSH plugin](https://img.shields.io/badge/DSH-plugin-4B6BFB?style=flat-square)](https://www.deepseek.com/harness/en/)
+
 [English](README.md) | **简体中文**
 
 DSH Orchestrator 是一个让你直接在原本的 AI 工作工具里调用 DeepSeek Harness（DSH）协作的插件。你的主 agent 可以把实现、调研、调试和长日志整理等任务交给 DSH，再在原有工作流中观察、继续或取消对应会话。当前支持 Codex，后续计划持续适配 Claude Code、Workbuddy 等主流 AI coding 与 agent 工具。
