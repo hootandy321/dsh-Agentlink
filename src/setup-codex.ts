@@ -13,7 +13,9 @@ import { loadConfig } from "./config.js";
 import { DshClient } from "./dsh-client.js";
 import { probeDshCliVersion, runDoctor } from "./doctor.js";
 
-const SERVER_NAME = "dsh_collab";
+const SERVER_NAME = "dsh_agentlink";
+const LEGACY_SERVER_NAMES = ["dsh_collab"] as const;
+const BRIDGE_SERVER_NAMES = [SERVER_NAME, ...LEGACY_SERVER_NAMES] as const;
 const DEFAULT_HOST_URL = "http://127.0.0.1:3080";
 const DEFAULT_PRESET = "code";
 
@@ -110,11 +112,12 @@ function tableName(line: string): string | undefined {
 }
 
 function isBridgeTable(name: string): boolean {
-  return (
-    name === `mcp_servers.${SERVER_NAME}` ||
-    name.startsWith(`mcp_servers.${SERVER_NAME}.`) ||
-    name === `mcp_servers."${SERVER_NAME}"` ||
-    name.startsWith(`mcp_servers."${SERVER_NAME}".`)
+  return BRIDGE_SERVER_NAMES.some(
+    (serverName) =>
+      name === `mcp_servers.${serverName}` ||
+      name.startsWith(`mcp_servers.${serverName}.`) ||
+      name === `mcp_servers."${serverName}"` ||
+      name.startsWith(`mcp_servers."${serverName}".`),
   );
 }
 
@@ -146,10 +149,11 @@ function rejectUnsupportedInlineConfig(config: string): void {
       "Codex config contains a multiline TOML string; setup will not edit it automatically. Use the manual configuration guide.",
     );
   }
-  const dottedAssignment = /^\s*mcp_servers\s*\.\s*(?:dsh_collab|"dsh_collab")\s*\./m;
+  const serverNamePattern = `(?:${BRIDGE_SERVER_NAMES.flatMap((name) => [name, `"${name}"`]).join("|")})`;
+  const dottedAssignment = new RegExp(`^\\s*mcp_servers\\s*\\.\\s*${serverNamePattern}\\s*\\.`, "m");
   if (dottedAssignment.test(config)) {
     throw new Error(
-      "found an inline/dotted dsh_collab MCP configuration; remove or convert it to table form before running setup",
+      "found an inline/dotted dsh-Agentlink MCP configuration; remove or convert it to table form before running setup",
     );
   }
 
@@ -157,15 +161,15 @@ function rejectUnsupportedInlineConfig(config: string): void {
   let inMcpServersTable = false;
   for (const line of lines) {
     const name = tableName(line);
-    if (name !== undefined && name.includes(SERVER_NAME) && !isBridgeTable(name)) {
+    if (name !== undefined && BRIDGE_SERVER_NAMES.some((serverName) => name.includes(serverName)) && !isBridgeTable(name)) {
       throw new Error(
-        "found a non-standard dsh_collab table; setup will not guess how to rewrite it. Use the manual configuration guide.",
+        "found a non-standard dsh-Agentlink table; setup will not guess how to rewrite it. Use the manual configuration guide.",
       );
     }
     if (name !== undefined) inMcpServersTable = name === "mcp_servers";
-    else if (inMcpServersTable && /^\s*(?:dsh_collab|"dsh_collab")\s*=/.test(line)) {
+    else if (inMcpServersTable && new RegExp(`^\\s*${serverNamePattern}\\s*=`).test(line)) {
       throw new Error(
-        "found an inline dsh_collab value under [mcp_servers]; remove or convert it to table form before running setup",
+        "found an inline dsh-Agentlink value under [mcp_servers]; remove or convert it to table form before running setup",
       );
     }
   }
@@ -175,7 +179,9 @@ export function upsertMcpConfig(config: string, bridgeBlock: string, replace: bo
   rejectUnsupportedInlineConfig(config);
   const exists = hasBridgeConfig(config);
   if (exists && !replace) {
-    throw new Error(`Codex MCP server ${SERVER_NAME} already exists; rerun with --replace after reviewing it`);
+    throw new Error(
+      `Codex MCP server ${SERVER_NAME} or legacy ${LEGACY_SERVER_NAMES.join(", ")} already exists; rerun with --replace after reviewing it`,
+    );
   }
 
   const kept: string[] = [];
@@ -218,7 +224,7 @@ export async function readConfigSnapshot(path: string): Promise<ConfigSnapshot> 
 async function backupConfig(path: string, snapshot: ConfigSnapshot): Promise<string | undefined> {
   if (!snapshot.exists) return undefined;
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const backupPath = `${path}.bak-dsh-orchestrator-${timestamp}-${process.pid}-${randomUUID()}`;
+  const backupPath = `${path}.bak-dsh-agentlink-${timestamp}-${process.pid}-${randomUUID()}`;
   await copyFile(path, backupPath, fsConstants.COPYFILE_EXCL);
   await chmod(backupPath, snapshot.mode);
   return backupPath;
@@ -226,7 +232,7 @@ async function backupConfig(path: string, snapshot: ConfigSnapshot): Promise<str
 
 async function atomicWrite(path: string, content: string, expected: ConfigSnapshot): Promise<void> {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  const temporaryPath = join(dirname(path), `.config.toml.dsh-orchestrator-${process.pid}-${Date.now()}.tmp`);
+  const temporaryPath = join(dirname(path), `.config.toml.dsh-agentlink-${process.pid}-${Date.now()}.tmp`);
   let handle: Awaited<ReturnType<typeof open>> | undefined;
   try {
     handle = await open(temporaryPath, "wx", expected.mode);
@@ -306,7 +312,7 @@ async function askYesNo(question: string): Promise<boolean> {
 }
 
 function printHelp(): void {
-  console.log(`DSH Orchestrator Codex setup
+  console.log(`dsh-Agentlink Codex setup
 
 Usage:
   npm run setup
@@ -369,9 +375,13 @@ async function main(): Promise<void> {
   let replace = options.replace;
   if (hasBridgeConfig(existing) && !replace) {
     if (options.yes) {
-      throw new Error(`${SERVER_NAME} already exists; inspect it and rerun with --replace to update it`);
+      throw new Error(
+        `${SERVER_NAME} or legacy ${LEGACY_SERVER_NAMES.join(", ")} already exists; inspect it and rerun with --replace to update it`,
+      );
     }
-    replace = await askYesNo(`Replace the existing ${SERVER_NAME} configuration?`);
+    replace = await askYesNo(
+      `Replace the existing ${SERVER_NAME} or legacy ${LEGACY_SERVER_NAMES.join(", ")} configuration?`,
+    );
     if (!replace) {
       console.log("No changes made.");
       return;
@@ -409,7 +419,7 @@ async function main(): Promise<void> {
     else console.log(`Host check: not connected; start it with ${report.startCommand}`);
   }
 
-  console.log("Restart Codex to load DSH Orchestrator. Configure the desired model in DSH; delegation will use that live route.");
+  console.log("Restart Codex to load dsh-Agentlink. Configure the desired model in DSH; delegation will use that live route.");
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {

@@ -1,49 +1,26 @@
-# DSH Orchestrator
+# dsh-Agentlink
 
-![DSH Orchestrator 首图](assets/dsh-orchestrator-cover.png)
+![dsh-Agentlink 首图](assets/dsh-agentlink-cover.webp)
+
+[![CI](https://github.com/hootandy321/dsh-Agentlink/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hootandy321/dsh-Agentlink/actions/workflows/ci.yml) [![GitHub Stars](https://img.shields.io/github/stars/hootandy321/dsh-Agentlink?style=flat-square&logo=github)](https://github.com/hootandy321/dsh-Agentlink/stargazers) [![License: MIT](https://img.shields.io/github/license/hootandy321/dsh-Agentlink?style=flat-square)](LICENSE) [![Node.js 22+](https://img.shields.io/badge/Node.js-22%2B-339933?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org/) [![DSH plugin](https://img.shields.io/badge/DSH-plugin-4B6BFB?style=flat-square)](https://www.deepseek.com/harness/en/)
 
 [English](README.md) | **简体中文**
 
-DSH Orchestrator 是一个让你直接在原本的 AI 工作工具里调用 DeepSeek Harness（DSH）协作的插件。你的主 agent 可以把实现、调研、调试和长日志整理等任务交给 DSH，再在原有工作流中观察、继续或取消对应会话。当前支持 Codex，后续计划持续适配 Claude Code、Workbunny 等主流 AI coding 与 agent 工具。
-
-## 为什么需要 DSH Orchestrator？
-
-### 利用 DSH 的 Harness 能力
-
-DSH 为复杂任务提供持久 session、工具调用、subagent 和人工监督等能力。DSH Orchestrator 让 Codex 能够与这套独立 harness 讨论并协作，同时不离开你原本的工作入口。
-
-![Codex 与 DeepSeek Harness 协作](assets/codex-dsh-collaboration.png)
-
-*Codex 继续负责规划、讨论和总控，DSH 负责执行 harness、会话与 worker。*
-
-### 不只是再增加一个原生 subagent
-
-原生 subagent 仍属于调用方自己的 agent tree。DSH Orchestrator 接入的是一套由用户配置的独立 harness：会话可以在 DSH Web 持续查看，使用 DSH 自己的 worker 与模型路由，并由 Codex 观察、继续或取消。
-
-![DSH Orchestrator 与原生 subagent 对比](assets/dsh-vs-native-subagents.png)
-
-*主 agent 专注判断和验收，DSH 使用你配置的模型承担更大规模的执行工作。*
-
-### 省时间、也省成本
-
-- **省时间。** 把实现、检索、资料提取和长日志整理等执行型任务交给你在 DSH 中配置的高速模型，例如 DeepSeek V4 路由，主 agent 可以继续规划和验收。
-- **省成本。** 把大量执行 token 路由到成本更低的 DeepSeek 模型，可以减少对昂贵主模型的消耗。
-
-实际速度和费用取决于模型、服务商、部署方式、网络与任务本身。
+dsh-Agentlink 是一个让你直接在原本的 AI 工作工具里调用 DeepSeek Harness（DSH）协作的插件。你的主 agent 可以把实现、调研、调试和长日志整理等任务交给 DSH，再在原有工作流中观察、继续或取消对应会话。当前支持 Codex，后续计划持续适配 Claude Code、Workbuddy 等主流 AI coding 与 agent 工具。
 
 ## 安装
 
-安装前先准备环境：只需要 **Node.js 22+**、**Codex** 和可以正常运行的 **DSH CLI**。先在 DSH 中配置一次你希望使用的模型，之后 DSH Orchestrator 会自动使用当前路由。
+安装前先准备环境：只需要 **Node.js 22+**、**Codex** 和可以正常运行的 **DSH CLI**。先在 DSH 中配置一次你希望使用的模型，之后 dsh-Agentlink 会自动使用当前路由。
 
 ### 让你的 AI agent 帮你安装
 
 把下面的仓库地址和指令直接发给 Codex 或其他 coding agent：
 
 ```text
-请从 https://github.com/hootandy321/dsh-orchestrator 安装 DSH Orchestrator。
+请从 https://github.com/hootandy321/dsh-Agentlink 安装 dsh-Agentlink。
 先检查 Node.js 22+、DSH CLI 和我的 DSH Web Host，在我确认的目录中 clone；
 运行 npm install 和 npm run setup -- --yes，然后执行 npm test 与 npm run doctor。
-如果已经存在 dsh_collab 配置，先向我展示冲突，再决定是否使用 --replace。
+如果已经存在 dsh_agentlink 或旧版 dsh_collab 配置，先向我展示冲突，再决定是否使用 --replace。
 不要替我启动或停止 dsh web，完成后告诉我何时需要重启 Codex。
 ```
 
@@ -65,15 +42,15 @@ DSH 为复杂任务提供持久 session、工具调用、subagent 和人工监�
 3. 克隆仓库、安装依赖并运行配置向导。
 
    ```bash
-   git clone https://github.com/hootandy321/dsh-orchestrator.git
-   cd dsh-orchestrator
+   git clone https://github.com/hootandy321/dsh-Agentlink.git
+   cd dsh-Agentlink
    npm install
    npm run setup
    ```
 
    向导只会询问 Host 地址和 DSH agent preset，随后备份 Codex 配置，并以 `approval_mode = "prompt"` 安装 MCP 入口。它不会启动 DSH，也不会替你重启 Codex。
 
-   无交互使用默认值时运行 `npm run setup -- --yes`。需要更新已有配置时，请先检查原配置，再运行 `npm run setup -- --replace`。
+   无交互使用默认值时运行 `npm run setup -- --yes`。需要更新已有配置时，请先检查原配置，再运行 `npm run setup -- --replace`。配置工具会识别旧版 `dsh_collab`，并且只在得到这次明确的替换授权后迁移为 `dsh_agentlink`。
 
 4. 重启 Codex，然后验证连接。
 
@@ -81,9 +58,42 @@ DSH 为复杂任务提供持久 session、工具调用、subagent 和人工监�
    npm run doctor
    ```
 
-通过 `/mcp` 或 Codex 设置确认 `dsh_collab` 已连接。需要完全手动编辑 TOML 或查看全部环境变量时，请阅读[手动 Codex MCP 配置](docs/manual-configuration.zh-CN.md)。
+通过 `/mcp` 或 Codex 设置确认 `dsh_agentlink` 已连接。需要完全手动编辑 TOML 或查看全部环境变量时，请阅读[手动 Codex MCP 配置](docs/manual-configuration.zh-CN.md)。
 
-DSH Orchestrator 是安装在调用方一侧的插件，不是 DSH Cordis bundle；请不要使用 `dsh plugin --profile ... add ...` 安装。
+dsh-Agentlink 是安装在调用方一侧的插件，不是 DSH Cordis bundle；请不要使用 `dsh plugin --profile ... add ...` 安装。
+
+## 为什么需要 dsh-Agentlink？
+
+### 利用 DSH 的 Harness 能力
+
+DSH 为复杂任务提供持久 session、工具调用、subagent 和人工监督等能力。dsh-Agentlink 让 Codex 能够与这套独立 harness 讨论并协作，同时不离开你原本的工作入口。
+
+![Codex 与 DeepSeek Harness 协作](assets/codex-dsh-collaboration.webp)
+
+*Codex 继续负责规划、讨论和总控，DSH 负责执行 harness、会话与 worker。*
+
+### 不只是再增加一个原生 subagent
+
+原生 subagent 仍属于调用方自己的 agent tree。dsh-Agentlink 接入的是一套由用户配置的独立 harness：会话可以在 DSH Web 持续查看，使用 DSH 自己的 worker 与模型路由，并由 Codex 观察、继续或取消。
+
+![dsh-Agentlink 与原生 subagent 对比](assets/dsh-vs-native-subagents.webp)
+
+*主 agent 专注判断和验收，DSH 使用你配置的模型承担更大规模的执行工作。*
+
+### 省时间、也省成本
+
+- **省时间。** 把实现、检索、资料提取和长日志整理等执行型任务交给你在 DSH 中配置的高速模型，例如 DeepSeek V4 路由，主 agent 可以继续规划和验收。
+- **省成本。** 把大量执行 token 路由到成本更低的 DeepSeek 模型，可以减少对昂贵主模型的消耗。
+
+实际速度和费用取决于模型、服务商、部署方式、网络与任务本身。完成安装后，你仍然可以像平常一样使用 Codex，只在适合交给 DSH 执行时直接让它发起委派即可。
+
+## 如何使用
+
+启动 `dsh web` 并让 Codex 重新加载 MCP 配置后，直接用自然语言告诉 Codex，例如：
+
+> 使用 dsh-Agentlink，把当前仓库里的这个实现任务委派给 DSH。保持会话在 DSH Web 可见，向我报告进度，任何 approval 都先询问我。
+
+之后 Codex 可以委派任务、观察事件、继续同一会话、与你一起回答 DSH 的问题，或取消任务。打开 `http://127.0.0.1:3080`，即可在 DSH Web 查看并操作同一个 session。
 
 ## MCP 工具
 
@@ -103,19 +113,11 @@ DSH Orchestrator 是安装在调用方一侧的插件，不是 DSH Cordis bundle
 
 正常委派没有 model 参数。目标模型只在安装或调整 DSH 时配置。每次 delegate 都会读取 `session.models.current` 并信任 Host 返回的 `routable`；bridge 不会修改模型，也不会根据 catalog group 自行推导 routability。
 
-## 如何使用
-
-启动 `dsh web` 并让 Codex 重新加载 MCP 配置后，直接用自然语言告诉 Codex，例如：
-
-> 使用 DSH Orchestrator，把当前仓库里的这个实现任务委派给 DSH。保持会话在 DSH Web 可见，向我报告进度，任何 approval 都先询问我。
-
-之后 Codex 可以委派任务、观察事件、继续同一会话、与你一起回答 DSH 的问题，或取消任务。打开 `http://127.0.0.1:3080`，即可在 DSH Web 查看并操作同一个 session。
-
 ## 后续方向
 
 以下内容是计划方向，不代表已经实现或 release 承诺。
 
-1. **Claude 与其他入口** — 探索 Claude Code、Claude Desktop MCP、Workbunny 等调用方接入同一个官方 DSH Web Host。
+1. **Claude 与其他入口** — 探索 Claude Code、Claude Desktop MCP、Workbuddy 等调用方接入同一个官方 DSH Web Host。
 2. **Agent 调用与信息传输** — 优化 prompt 组织、上下文打包、输出摘要和压缩策略，同时确保问题、审批、错误和最终答案可靠传输。
 3. **更多集成** — 待 Codex bridge 与兼容性约定稳定后继续扩展。
 

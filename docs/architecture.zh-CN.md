@@ -6,7 +6,7 @@
 
 ## 定位与 Host 生命周期
 
-DSH Orchestrator 是调用方一侧的 bridge，不是 DSH Cordis bundle。Codex 把它作为本地 STDIO MCP server 启动，bridge 再连接独立运行的官方 DSH Web Host。
+dsh-Agentlink 是调用方一侧的 bridge，不是 DSH Cordis bundle。Codex 把它作为本地 STDIO MCP server 启动，bridge 再连接独立运行的官方 DSH Web Host。
 
 bridge 采用 connect-only 模式：它不会启动、守护、停止或拥有 `dsh web`，也不负责 Host pidfile 或端口锁。Host 生命周期由用户或操作系统服务管理，因此单个 Codex MCP 进程退出后，DSH session 仍可留在官方 Web UI 中查看。
 

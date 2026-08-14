@@ -372,6 +372,8 @@ export const dshRpcReceiptSchema = z.union([
 
 export type DshRpcReceipt = z.infer<typeof dshRpcReceiptSchema>;
 
+// Keep the pre-rename global symbol key so mixed in-process bridge modules
+// continue to recognize the same unary metadata envelope.
 export const dshUnaryMetadata = Symbol.for("dsh-orchestrator.dshUnaryMetadata");
 
 export interface DshUnaryMetadata {

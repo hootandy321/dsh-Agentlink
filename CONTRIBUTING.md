@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping improve DSH Orchestrator. This project is a Codex-side MCP integration for the official DSH Web Host; it is not currently a DSH Cordis bundle.
+Thanks for helping improve dsh-Agentlink. This project is a Codex-side MCP integration for the official DSH Web Host; it is not currently a DSH Cordis bundle.
 
 ## Development setup
 

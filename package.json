@@ -1,16 +1,16 @@
 {
-  "name": "dsh-orchestrator",
+  "name": "dsh-agentlink",
   "version": "0.1.0-alpha.1",
   "private": true,
-  "description": "Codex-side orchestration bridge for the official DeepSeek Harness Web Host.",
+  "description": "Caller-side bridge from agent frameworks to the official DeepSeek Harness Web Host.",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/hootandy321/dsh-orchestrator.git"
+    "url": "git+https://github.com/hootandy321/dsh-Agentlink.git"
   },
-  "homepage": "https://github.com/hootandy321/dsh-orchestrator#readme",
+  "homepage": "https://github.com/hootandy321/dsh-Agentlink#readme",
   "bugs": {
-    "url": "https://github.com/hootandy321/dsh-orchestrator/issues"
+    "url": "https://github.com/hootandy321/dsh-Agentlink/issues"
   },
   "keywords": [
     "codex",
@@ -18,6 +18,8 @@
     "dsh",
     "dsh-plugin",
     "mcp",
+    "agent-link",
+    "agent-harness",
     "agent-collaboration"
   ],
   "type": "module",
@@ -34,9 +36,9 @@
     "LICENSE"
   ],
   "bin": {
-    "dsh-orchestrator": "dist/index.js",
-    "dsh-orchestrator-doctor": "dist/doctor.js",
-    "dsh-orchestrator-setup": "dist/setup-codex.js"
+    "dsh-agentlink": "dist/index.js",
+    "dsh-agentlink-doctor": "dist/doctor.js",
+    "dsh-agentlink-setup": "dist/setup-codex.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

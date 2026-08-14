@@ -22,22 +22,24 @@ Use the absolute Node.js path and append `/dist/index.js` to the absolute reposi
 ## Add the MCP server
 
 ```toml
-[mcp_servers.dsh_collab]
+[mcp_servers.dsh_agentlink]
 command = "/absolute/path/to/node"
-args = ["/absolute/path/to/dsh-orchestrator/dist/index.js"]
+args = ["/absolute/path/to/dsh-Agentlink/dist/index.js"]
 
-[mcp_servers.dsh_collab.env]
+[mcp_servers.dsh_agentlink.env]
 DSH_HOST_URL = "http://127.0.0.1:3080"
 DSH_HOST_VERSION = "0.1.0-rc.6"
 DSH_BRIDGE_AGENT_PRESET = "code"
 
-[mcp_servers.dsh_collab.tools.dsh_resolve_approval]
+[mcp_servers.dsh_agentlink.tools.dsh_resolve_approval]
 approval_mode = "prompt"
 ```
 
 Keep `approval_mode = "prompt"`: a DSH approval can authorize a sandbox escalation, so `allow_once` must remain human-gated.
 
-Restart the Codex desktop app, restart the IDE extension, or exit and reopen the CLI after changing the file. Then use `/mcp` or Codex Settings to confirm that `dsh_collab` is connected.
+Restart the Codex desktop app, restart the IDE extension, or exit and reopen the CLI after changing the file. Then use `/mcp` or Codex Settings to confirm that `dsh_agentlink` is connected.
+
+If an earlier installation still uses `dsh_collab`, do not keep both entries: run `npm run setup -- --replace` after reviewing the generated block. The setup command removes the legacy tables and writes one `dsh_agentlink` entry while preserving unrelated MCP servers.
 
 ## Environment variables
 
@@ -66,4 +68,4 @@ DSH CLI `0.1.0-rc.6` is the current tested target. In rc.6, `host.describe.versi
 
 The rc.6 Web API has no auth token. Loopback-only is the safe default. A remote URL must be an explicitly trusted deployment and requires `DSH_ALLOW_REMOTE_HOST=true`.
 
-DSH Orchestrator is not a DSH Cordis bundle. Do not install it with `dsh plugin --profile ... add ...`.
+dsh-Agentlink is not a DSH Cordis bundle. Do not install it with `dsh plugin --profile ... add ...`.

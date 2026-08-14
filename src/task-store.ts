@@ -45,7 +45,7 @@ function validateRecord(value: unknown, expectedTaskId: string): TaskRecord {
     keys[0] !== "sessionId" ||
     keys[1] !== "taskId"
   ) {
-    throw new TaskStoreError(`invalid codex-dsh task mapping for ${JSON.stringify(expectedTaskId)}`);
+    throw new TaskStoreError(`invalid dsh-Agentlink task mapping for ${JSON.stringify(expectedTaskId)}`);
   }
   return { taskId: expectedTaskId, sessionId: (value as Record<string, unknown>).sessionId as string };
 }
@@ -55,7 +55,7 @@ function parseRecord(raw: string, expectedTaskId: string): TaskRecord {
     return validateRecord(JSON.parse(raw), expectedTaskId);
   } catch (error) {
     if (error instanceof TaskStoreError) throw error;
-    throw new TaskStoreError(`could not parse codex-dsh task mapping ${JSON.stringify(expectedTaskId)}`, { cause: error });
+    throw new TaskStoreError(`could not parse dsh-Agentlink task mapping ${JSON.stringify(expectedTaskId)}`, { cause: error });
   }
 }
 

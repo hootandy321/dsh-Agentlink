@@ -40,10 +40,10 @@ async function main() {
 
   connection.start();
   await server.connect(transport);
-  console.error(`[dsh-orchestrator] connect-only MCP ready; configured DSH Host ${config.hostUrl}`);
+  console.error(`[dsh-agentlink] connect-only MCP ready; configured DSH Host ${config.hostUrl}`);
 }
 
 void main().catch((error) => {
-  console.error(`[dsh-orchestrator] fatal: ${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`);
+  console.error(`[dsh-agentlink] fatal: ${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`);
   process.exitCode = 1;
 });
