@@ -11,7 +11,7 @@ The exact concurrency path is still under investigation. Do not assume that the 
 Until this is fixed:
 
 - after upgrading, close or restart every Codex task that still runs the previous bridge build;
-- do not run different DSH Orchestrator builds against the same `DSH_BRIDGE_HOME`;
+- do not run different dsh-Agentlink builds against the same `DSH_BRIDGE_HOME`;
 - give concurrently active build or instance groups separate `DSH_BRIDGE_HOME` directories;
 - preserve a failed bridge home for diagnosis instead of deleting it blindly; use a fresh bridge home to resume new delegations.
 

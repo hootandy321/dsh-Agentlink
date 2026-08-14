@@ -22,22 +22,24 @@ pwd
 ## 添加 MCP server
 
 ```toml
-[mcp_servers.dsh_collab]
+[mcp_servers.dsh_agentlink]
 command = "/absolute/path/to/node"
-args = ["/absolute/path/to/dsh-orchestrator/dist/index.js"]
+args = ["/absolute/path/to/dsh-Agentlink/dist/index.js"]
 
-[mcp_servers.dsh_collab.env]
+[mcp_servers.dsh_agentlink.env]
 DSH_HOST_URL = "http://127.0.0.1:3080"
 DSH_HOST_VERSION = "0.1.0-rc.6"
 DSH_BRIDGE_AGENT_PRESET = "code"
 
-[mcp_servers.dsh_collab.tools.dsh_resolve_approval]
+[mcp_servers.dsh_agentlink.tools.dsh_resolve_approval]
 approval_mode = "prompt"
 ```
 
 请保留 `approval_mode = "prompt"`：DSH approval 可能允许 sandbox escalation，因此 `allow_once` 必须继续由人确认。
 
-修改后需要重启 Codex 桌面应用、重启 IDE extension，或退出并重新打开 CLI。随后通过 `/mcp` 或 Codex 设置确认 `dsh_collab` 已连接。
+修改后需要重启 Codex 桌面应用、重启 IDE extension，或退出并重新打开 CLI。随后通过 `/mcp` 或 Codex 设置确认 `dsh_agentlink` 已连接。
+
+如果旧版安装仍使用 `dsh_collab`，请勿同时保留两个入口。检查新配置后运行 `npm run setup -- --replace`；配置工具会移除旧表，只写入一个 `dsh_agentlink`，并保留其他 MCP server。
 
 ## 环境变量
 
@@ -66,4 +68,4 @@ npm run doctor
 
 rc.6 Web API 没有 auth token，因此 loopback-only 是安全默认值。远程 URL 必须是用户明确信任的部署，并同时设置 `DSH_ALLOW_REMOTE_HOST=true`。
 
-DSH Orchestrator 不是 DSH Cordis bundle，请不要使用 `dsh plugin --profile ... add ...` 安装。
+dsh-Agentlink 不是 DSH Cordis bundle，请不要使用 `dsh plugin --profile ... add ...` 安装。

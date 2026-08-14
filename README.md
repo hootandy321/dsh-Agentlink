@@ -1,26 +1,26 @@
-# DSH Orchestrator
+# dsh-Agentlink
 
-![DSH Orchestrator cover](assets/dsh-orchestrator-cover.webp)
+![dsh-Agentlink cover](assets/dsh-agentlink-cover.webp)
 
-[![CI](https://github.com/hootandy321/dsh-orchestrator/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hootandy321/dsh-orchestrator/actions/workflows/ci.yml) [![GitHub Stars](https://img.shields.io/github/stars/hootandy321/dsh-orchestrator?style=flat-square&logo=github)](https://github.com/hootandy321/dsh-orchestrator/stargazers) [![License: MIT](https://img.shields.io/github/license/hootandy321/dsh-orchestrator?style=flat-square)](LICENSE) [![Node.js 22+](https://img.shields.io/badge/Node.js-22%2B-339933?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org/) [![DSH plugin](https://img.shields.io/badge/DSH-plugin-4B6BFB?style=flat-square)](https://www.deepseek.com/harness/en/)
+[![CI](https://github.com/hootandy321/dsh-Agentlink/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hootandy321/dsh-Agentlink/actions/workflows/ci.yml) [![GitHub Stars](https://img.shields.io/github/stars/hootandy321/dsh-Agentlink?style=flat-square&logo=github)](https://github.com/hootandy321/dsh-Agentlink/stargazers) [![License: MIT](https://img.shields.io/github/license/hootandy321/dsh-Agentlink?style=flat-square)](LICENSE) [![Node.js 22+](https://img.shields.io/badge/Node.js-22%2B-339933?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org/) [![DSH plugin](https://img.shields.io/badge/DSH-plugin-4B6BFB?style=flat-square)](https://www.deepseek.com/harness/en/)
 
 **English** | [简体中文](README.zh-CN.md)
 
-DSH Orchestrator is a plugin that lets you use DeepSeek Harness (DSH) from the AI work tool you already use. Your primary agent can delegate implementation, research, debugging, and long-log work to DSH, then observe, continue, or cancel those sessions without leaving its normal workflow. Codex is supported today; Claude Code, Workbuddy, and other popular AI coding and agent tools are planned.
+dsh-Agentlink is a plugin that lets you use DeepSeek Harness (DSH) from the AI work tool you already use. Your primary agent can delegate implementation, research, debugging, and long-log work to DSH, then observe, continue, or cancel those sessions without leaving its normal workflow. Codex is supported today; Claude Code, Workbuddy, and other popular AI coding and agent tools are planned.
 
 ## Installation
 
-Prepare the environment first: you need **Node.js 22+**, **Codex**, and a working **DSH CLI**. Configure your preferred model in DSH once; DSH Orchestrator uses that live route automatically.
+Prepare the environment first: you need **Node.js 22+**, **Codex**, and a working **DSH CLI**. Configure your preferred model in DSH once; dsh-Agentlink uses that live route automatically.
 
 ### Install with your AI agent
 
 Send the following repository URL and prompt to Codex or another coding agent:
 
 ```text
-Install DSH Orchestrator from https://github.com/hootandy321/dsh-orchestrator.
+Install dsh-Agentlink from https://github.com/hootandy321/dsh-Agentlink.
 Check Node.js 22+, the DSH CLI, and my DSH Web Host first. Clone it into a location I approve,
 run npm install and npm run setup -- --yes, then run npm test and npm run doctor.
-If dsh_collab already exists, show me the conflict before using --replace.
+If dsh_agentlink or the legacy dsh_collab entry already exists, show me the conflict before using --replace.
 Do not start or stop dsh web for me. Tell me when I need to restart Codex.
 ```
 
@@ -42,15 +42,15 @@ Do not start or stop dsh web for me. Tell me when I need to restart Codex.
 3. Clone, install, and run the setup wizard.
 
    ```bash
-   git clone https://github.com/hootandy321/dsh-orchestrator.git
-   cd dsh-orchestrator
+   git clone https://github.com/hootandy321/dsh-Agentlink.git
+   cd dsh-Agentlink
    npm install
    npm run setup
    ```
 
    The wizard asks for the Host URL and DSH agent preset, backs up your Codex configuration, and installs the MCP entry with `approval_mode = "prompt"`. It does not start DSH or restart Codex.
 
-   For unattended defaults, use `npm run setup -- --yes`. To update an existing entry, review it first and then use `npm run setup -- --replace`.
+   For unattended defaults, use `npm run setup -- --yes`. To update an existing entry, review it first and then use `npm run setup -- --replace`. The setup command recognizes the legacy `dsh_collab` entry and migrates it to `dsh_agentlink` only after that explicit replacement approval.
 
 4. Restart Codex, then verify the connection.
 
@@ -58,15 +58,15 @@ Do not start or stop dsh web for me. Tell me when I need to restart Codex.
    npm run doctor
    ```
 
-Use `/mcp` or Codex Settings to confirm that `dsh_collab` is connected. For a fully manual TOML setup and all environment variables, see [Manual Codex MCP configuration](docs/manual-configuration.md).
+Use `/mcp` or Codex Settings to confirm that `dsh_agentlink` is connected. For a fully manual TOML setup and all environment variables, see [Manual Codex MCP configuration](docs/manual-configuration.md).
 
-DSH Orchestrator is a caller-side plugin, not a DSH Cordis bundle. Do not install it with `dsh plugin --profile ... add ...`.
+dsh-Agentlink is a caller-side plugin, not a DSH Cordis bundle. Do not install it with `dsh plugin --profile ... add ...`.
 
-## Why DSH Orchestrator?
+## Why dsh-Agentlink?
 
 ### Use DSH's Harness capabilities
 
-DSH combines persistent sessions, tool execution, subagents, and human supervision for complex work. DSH Orchestrator lets Codex discuss and coordinate with that second harness while you stay in the same workflow.
+DSH combines persistent sessions, tool execution, subagents, and human supervision for complex work. dsh-Agentlink lets Codex discuss and coordinate with that second harness while you stay in the same workflow.
 
 ![Codex coordinating work with DeepSeek Harness](assets/codex-dsh-collaboration.webp)
 
@@ -74,9 +74,9 @@ DSH combines persistent sessions, tool execution, subagents, and human supervisi
 
 ### More than another native subagent
 
-A native subagent remains inside the caller's own agent tree. DSH Orchestrator adds a separate, user-configured harness: its sessions stay visible in DSH Web, can use DSH's own workers and model route, and can be observed, continued, or canceled by Codex.
+A native subagent remains inside the caller's own agent tree. dsh-Agentlink adds a separate, user-configured harness: its sessions stay visible in DSH Web, can use DSH's own workers and model route, and can be observed, continued, or canceled by Codex.
 
-![DSH Orchestrator compared with native subagents](assets/dsh-vs-native-subagents.webp)
+![dsh-Agentlink compared with native subagents](assets/dsh-vs-native-subagents.webp)
 
 *Use the primary agent for judgment and validation, while DSH handles larger execution workloads through the model you configured there.*
 
@@ -91,7 +91,7 @@ Actual speed and cost depend on the selected model, provider, deployment, networ
 
 Once `dsh web` is running and Codex has reloaded the MCP configuration, ask Codex in normal language, for example:
 
-> Use DSH Orchestrator to delegate this implementation to DSH in the current repository. Keep it visible in DSH Web, report progress, and ask me before any approval.
+> Use dsh-Agentlink to delegate this implementation to DSH in the current repository. Keep it visible in DSH Web, report progress, and ask me before any approval.
 
 Codex can then delegate the task, observe its event stream, continue the same session, answer questions with you, or cancel work. Open `http://127.0.0.1:3080` to inspect and interact with the same session in DSH Web.
 

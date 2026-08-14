@@ -66,7 +66,7 @@ async function handled<T>(operation: () => Promise<T>) {
 }
 
 export function createMcpServer(service: BridgeService): McpServer {
-  const server = new McpServer({ name: "dsh-orchestrator", version: "0.1.0-alpha.1" });
+  const server = new McpServer({ name: "dsh-agentlink", version: "0.1.0-alpha.1" });
 
   server.registerTool(
     "dsh_host_status",

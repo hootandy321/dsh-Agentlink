@@ -6,7 +6,7 @@ This document contains the bridge semantics that are intentionally kept out of t
 
 ## Positioning and Host lifecycle
 
-DSH Orchestrator is a caller-side bridge, not a DSH Cordis bundle. Codex starts it as a local STDIO MCP server; the bridge connects to an independently running official DSH Web Host.
+dsh-Agentlink is a caller-side bridge, not a DSH Cordis bundle. Codex starts it as a local STDIO MCP server; the bridge connects to an independently running official DSH Web Host.
 
 The bridge is connect-only. It does not start, daemonize, stop, or own `dsh web`, and it has no Host pidfile or port lock. The user or an OS service owns the Host lifecycle. This keeps DSH sessions visible through the official Web UI after an individual Codex MCP process exits.
 
