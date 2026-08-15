@@ -132,4 +132,4 @@ These are planned directions, not implemented capabilities or release commitment
 
 [MIT](LICENSE)
 
-Alpha note: DSH is still in developer preview, this community project is independent of DeepSeek and OpenAI, and `0.1.0-alpha.1` has a known shared-ledger concurrency issue; read [Known issues](KNOWN_ISSUES.md) before upgrades or concurrent bridge runs.
+Alpha note: DSH is still in developer preview and this community project is independent of DeepSeek and OpenAI. `0.1.0-alpha.1` contains a shared-ledger concurrency bug; the fix is in source and pending release. Read [Known issues](KNOWN_ISSUES.md) before upgrading or running concurrent bridge processes.

@@ -44,7 +44,7 @@ DSH session/history 是会话内容的唯一事实来源。bridge 不会把 prom
 
 每条 JSONL record 都有单调递增的 task `cursor`/`mergeIndex`、`sourceSessionId`，以及可选的 `sourceSeq`、`parentSessionId`、`origin`、event type 和经过清理的 `coordination` 对象。它不会保存完整 mux/history envelope。`mergeIndex` 只表示 bridge 的观察与持久化顺序，不是 DSH 全局因果顺序。
 
-task ledger append 与 workspace claim 变更使用 task/registry scoped 的跨进程锁。writer 持锁后重新读取磁盘状态，再分配 cursor 或修改 claim。不可变 task mapping 使用原子临时文件加 hard-link 创建。指向同一 `DSH_BRIDGE_HOME` 的 bridge 进程会共享 coordination state，也必须连接同一个 Host；更换 Host origin 时应使用新的 bridge home。
+task ledger append 与 workspace claim 变更使用 task/registry scoped 的跨进程锁。writer 持锁后重新读取磁盘状态，再分配 cursor 或修改 claim。不可变 task mapping 使用原子临时文件加 hard-link 创建。指向同一 `DSH_BRIDGE_HOME` 的 bridge 进程会共享 coordination state，也必须连接同一个 Host；更换 Host origin 时应使用新的 bridge home。锁只用于本地文件系统上的短临界区；自动 stale-lock 回收被明确禁用，因为 PID/mtime 观察无法与后续破坏性 rename 原子绑定。writer 被强制终止时可能留下 fail-closed 锁，需要操作者显式恢复。
 
 恢复流程采用 subscribe-first：
 

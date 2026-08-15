@@ -44,7 +44,7 @@ DSH session/history is the only source of truth for conversation content. The br
 
 Each JSONL record has a monotonic task `cursor`/`mergeIndex`, `sourceSessionId`, optional `sourceSeq`, optional `parentSessionId`, `origin`, event type, and a scrubbed `coordination` object. It never contains the full mux/history envelope. `mergeIndex` is bridge observation and persistence order, not a DSH global causal order.
 
-Task-ledger appends and workspace-claim changes use task/registry-scoped inter-process locks. A writer rereads current disk state while holding the lock before allocating a cursor or changing a claim. Immutable task mappings use atomic temp-file plus hard-link creation. Bridge processes sharing one `DSH_BRIDGE_HOME` therefore share coordination state and must point to the same Host. Use a separate bridge home when changing Host origins.
+Task-ledger appends and workspace-claim changes use task/registry-scoped inter-process locks. A writer rereads current disk state while holding the lock before allocating a cursor or changing a claim. Immutable task mappings use atomic temp-file plus hard-link creation. Bridge processes sharing one `DSH_BRIDGE_HOME` therefore share coordination state and must point to the same Host. Use a separate bridge home when changing Host origins. Lock critical sections are short and local-filesystem only; automatic stale-lock reaping is deliberately disabled because PID/mtime observation cannot be atomically coupled to a destructive rename. A hard-killed writer can leave a fail-closed lock that requires explicit operator recovery.
 
 Recovery is subscribe-first:
 

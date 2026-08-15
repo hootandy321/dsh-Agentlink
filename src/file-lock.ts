@@ -2,6 +2,12 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import { join } from "node:path";
 
+// This lock is for short critical sections on one local filesystem. It has no
+// heartbeat and deliberately does not auto-reap stale paths: an mtime/PID
+// observation cannot be atomically coupled to a later rename, and those
+// observations are not reliable on network filesystems. A hard-killed owner
+// can therefore leave a fail-closed directory that requires operator cleanup.
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -13,11 +19,16 @@ function errorCode(error: unknown): string | undefined {
 export async function withFileLock<T>(
   lockDir: string,
   work: () => Promise<T>,
-  options: { timeoutMs?: number; retryMs?: number; staleMs?: number } = {},
+  options: {
+    timeoutMs?: number;
+    retryMs?: number;
+    // Retained for caller compatibility. Automatic stale reaping is disabled
+    // until it can use a primitive with atomic compare-and-delete semantics.
+    staleMs?: number;
+  } = {},
 ): Promise<T> {
   const timeoutMs = options.timeoutMs ?? 10_000;
   const retryMs = options.retryMs ?? 10;
-  const staleMs = options.staleMs ?? 30_000;
   const deadline = Date.now() + timeoutMs;
   const token = randomUUID();
   const ownerPath = join(lockDir, "owner.json");
@@ -27,16 +38,6 @@ export async function withFileLock<T>(
       await fs.mkdir(lockDir, { mode: 0o700 });
     } catch (error) {
       if (errorCode(error) !== "EEXIST") throw error;
-      if (await isStaleLock(lockDir, ownerPath, staleMs)) {
-        const stalePath = `${lockDir}.stale.${process.pid}.${randomUUID()}`;
-        try {
-          await fs.rename(lockDir, stalePath);
-          await fs.rm(stalePath, { recursive: true, force: true });
-          continue;
-        } catch (staleError) {
-          if (errorCode(staleError) !== "ENOENT") throw staleError;
-        }
-      }
       if (Date.now() >= deadline) throw new Error(`timed out acquiring file lock ${lockDir}`);
       await sleep(retryMs);
       continue;
@@ -59,7 +60,10 @@ export async function withFileLock<T>(
         await sleep(retryMs);
         continue;
       }
-      await fs.rm(lockDir, { recursive: true, force: true });
+      // We have not written our token, so we cannot prove ownership of the
+      // current path. rmdir can clean up only our still-empty attempt; if a
+      // competitor has installed owner.json it fails closed and preserves it.
+      await fs.rmdir(lockDir).catch(() => undefined);
       throw error;
     }
   }
@@ -83,29 +87,5 @@ async function readOwner(ownerPath: string): Promise<{ pid?: number; token?: str
     };
   } catch {
     return undefined;
-  }
-}
-
-function processIsAlive(pid: number | undefined): boolean {
-  if (pid === undefined || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return errorCode(error) === "EPERM";
-  }
-}
-
-async function isStaleLock(lockDir: string, ownerPath: string, staleMs: number): Promise<boolean> {
-  try {
-    const info = await fs.stat(lockDir);
-    if (Date.now() - info.mtimeMs < staleMs) return false;
-    return !processIsAlive((await readOwner(ownerPath))?.pid);
-  } catch (error) {
-    // An ENOENT from stat is an old observation: the lockDir just vanished between
-    // the mkdir attempt and this stat (a competitor removed and rebuilt it). Treating
-    // it as stale could later delete a fresh lock the competitor created, so report
-    // it as non-stale and let the retry loop re-observe the directory.
-    return false;
   }
 }

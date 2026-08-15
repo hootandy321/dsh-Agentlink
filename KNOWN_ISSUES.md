@@ -6,9 +6,9 @@ Status: fixed after `0.1.0-alpha.1` (not yet released).
 
 A duplicate task cursor was observed when multiple bridge processes, including processes from different builds, shared the same `DSH_BRIDGE_HOME`. The affected task ledger then reported `unrecoverable_gap`; in the observed run, the rejected ledger queue also caused the MCP transport process to exit.
 
-The root cause was a race between creating a lock directory and writing its `owner.json`. If another process removed or replaced the directory in that window, the losing writer could delete the replacement lock. A second stale-lock race treated a vanished directory as proof that a subsequently created lock was stale.
+The root cause included two unsafe check-then-delete paths. A process that lost the race between creating a lock directory and writing its `owner.json` could delete a replacement lock. Separately, automatic stale-lock reaping could rename and delete a freshly reacquired lock based on an older mtime/PID observation.
 
-The fixed implementation retries owner writes that lose with `ENOENT` or `EEXIST` without deleting the current lock directory, and treats `stat` `ENOENT` as a non-stale observation. Deterministic regression tests cover both races and preservation of the competing owner.
+The fixed implementation retries owner writes that lose with `ENOENT` or `EEXIST` without deleting the current lock directory. Unexpected owner-write errors only attempt to remove an empty directory. Automatic stale reaping is disabled and now fails closed because Node's portable filesystem APIs cannot atomically compare a stale observation with a later destructive rename. Deterministic regression tests cover lost owner writes, stale observations, and preservation of competing owners.
 
 Upgrade requirement: every bridge process sharing one `DSH_BRIDGE_HOME` must be restarted onto the fixed build. One remaining `0.1.0-alpha.1` process can still race with a fixed process because the old process does not follow the corrected ownership rules.
 
@@ -20,3 +20,7 @@ When upgrading or recovering an affected installation:
 - preserve a failed bridge home for diagnosis instead of deleting it blindly; use a fresh bridge home to resume new delegations.
 
 DSH conversation history remains owned by the DSH Web Host. Using a fresh bridge home does not delete DSH sessions, but existing bridge task ids, workspace claims, and task cursors are not automatically migrated.
+
+### Crash-recovery trade-off
+
+The lock is intended for short critical sections on one local filesystem. It has no heartbeat, its PID/mtime observations are not valid on NFS, and the fixed build does not automatically delete an apparently stale lock. A process that is hard-killed while holding a lock can therefore leave an exact lock directory that causes later operations to time out. Stop every bridge process using that bridge home, preserve a backup, and inspect the exact owner before any manual cleanup; never delete the bridge home or a broad parent directory blindly.
