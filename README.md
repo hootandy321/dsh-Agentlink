@@ -58,7 +58,9 @@ Do not start or stop dsh web for me. Tell me when I need to restart Codex.
    npm run doctor
    ```
 
-Use `/mcp` or Codex Settings to confirm that `dsh_agentlink` is connected. For a fully manual TOML setup and all environment variables, see [Manual Codex MCP configuration](docs/manual-configuration.md).
+Use `/mcp` or Codex Settings to confirm that `dsh_agentlink` is connected. The doctor also reports the bridge's fail-closed lock locations under `DSH_BRIDGE_HOME` read-only and never cleans them, so it is safe to run even when a lock is present. For a fully manual TOML setup and all environment variables, see [Manual Codex MCP configuration](docs/manual-configuration.md).
+
+This source patch stops new projection/chunk floods from expanding the coordination ledger, but it does not compact an existing 5 MB+ ledger. Preserve the old bridge home for inspection; new delegations can use a separate `DSH_BRIDGE_HOME`. DSH `session.history`, not the bridge ledger, remains the conversation source of truth. See [Known issues](KNOWN_ISSUES.md) for the conservative recovery boundary.
 
 dsh-Agentlink is a caller-side plugin, not a DSH Cordis bundle. Do not install it with `dsh plugin --profile ... add ...`.
 
@@ -103,7 +105,7 @@ Codex can then delegate the task, observe its event stream, continue the same se
 - `dsh_continue` — compatibility alias for `dsh_followup`
 - `dsh_status` — availability, execution, lineage, queue, pending interactions, final message, and cursors
 - `dsh_tail` — bounded event digests using a bridge task cursor
-- `dsh_wait` — wait up to 30 seconds for a new event/state/pending/terminal change
+- `dsh_wait` — wait up to 30 seconds for a durable event, state change, pending interaction, or terminal status
 - `dsh_observe` — compatibility alias around `dsh_wait`; bridge cursors replace raw session seq cursors
 - `dsh_cancel` — `scope="turn"|"queue"`
 - `dsh_list` — task mappings enriched with current derived status
@@ -112,6 +114,8 @@ Codex can then delegate the task, observe its event stream, continue the same se
 - `dsh_release_workspace` — explicitly release a persistent bridge workspace claim without closing the DSH session
 
 Normal delegation has no model argument. Configure the desired model only when installing or adjusting DSH. Each delegate reads `session.models.current` and trusts the Host's `routable` boolean; it neither changes the model nor derives routability from catalog groups.
+
+`dsh_wait` observes durable bridge state. Assistant delta/chunk frames and top-level `session/projection` snapshots are skipped, so they do not bump the task revision or wake waiters; complete final messages remain observable through status/tail after the turn ends.
 
 ## Roadmap
 
@@ -132,4 +136,4 @@ These are planned directions, not implemented capabilities or release commitment
 
 [MIT](LICENSE)
 
-Alpha note: DSH is still in developer preview, this community project is independent of DeepSeek and OpenAI, and `0.1.0-alpha.1` has a known shared-ledger concurrency issue; read [Known issues](KNOWN_ISSUES.md) before upgrades or concurrent bridge runs.
+Alpha note: DSH is still in developer preview and this community project is independent of DeepSeek and OpenAI. `0.1.0-alpha.1` contains a shared-ledger concurrency bug; the fix is in source and pending release. Read [Known issues](KNOWN_ISSUES.md) before upgrading or running concurrent bridge processes.

@@ -19,18 +19,25 @@ async function main() {
   const service = new BridgeService(config, api, tasks, connection, ledger);
   const server = createMcpServer(service);
   const transport = new StdioServerTransport();
-  let closing = false;
+  let shutdownPromise: Promise<void> | undefined;
 
   const shutdown = async () => {
-    if (closing) return;
-    closing = true;
-    await connection.stop().catch(() => undefined);
-    await server.close().catch(() => undefined);
+    shutdownPromise ??= (async () => {
+      await connection.stop().catch(() => undefined);
+      await server.close().catch(() => undefined);
+    })();
+    await shutdownPromise;
   };
 
   transport.onclose = () => {
     void shutdown();
   };
+  process.stdin.once("end", () => {
+    void shutdown();
+  });
+  process.stdin.once("close", () => {
+    void shutdown();
+  });
   process.once("SIGINT", () => {
     void shutdown();
   });

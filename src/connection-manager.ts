@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from "node:util";
+
 import type { BridgeConfig } from "./config.js";
 import { DshRpcError, DshTransportError } from "./dsh-client.js";
 import type { EventLedger, LedgerSnapshot } from "./event-ledger.js";
@@ -150,12 +152,40 @@ function copyPending(envelope: DshPendingEnvelope): DshPendingEnvelope {
   return structuredClone(envelope);
 }
 
+function queueViewChanged(previous: QueueSnapshot | undefined, items: DshQueuedInboxItem[], connectionEpoch: number): boolean {
+  return (
+    previous === undefined ||
+    !previous.known ||
+    previous.stale ||
+    previous.connectionEpoch !== connectionEpoch ||
+    !isDeepStrictEqual(previous.items, items)
+  );
+}
+
 function isPendingFrame(frame: DshMuxFrame): frame is DshPendingEnvelope["payload"] {
   return frame.type === "approval/requested" || frame.type === "question/requested";
 }
 
 function sessionIdOf(frame: DshMuxFrame): string | undefined {
   return frame.type === "stream/error" ? undefined : frame.sessionId;
+}
+
+const EPHEMERAL_CONTENT_STREAM_TYPES: ReadonlySet<string> = new Set([
+  "assistant/message/delta",
+  "assistant/delta",
+  "assistant/chunk",
+]);
+
+function isEphemeralContentStreamType(eventType: string): boolean {
+  return EPHEMERAL_CONTENT_STREAM_TYPES.has(eventType);
+}
+
+function isEphemeralContentStreamFrame(frame: DshMuxFrame): boolean {
+  return frame.type === "session/event" && isEphemeralContentStreamType(frame.event.type);
+}
+
+function isTopLevelProjectionFrame(frame: DshMuxFrame): boolean {
+  return frame.type === "session/projection";
 }
 
 function lineageForRoot(root: TaskRecord, summaries: DshSessionSummary[]): TaskLineageSession[] {
@@ -237,10 +267,13 @@ export class DshConnectionManager implements DshConnection {
   private readonly baselineQuietMs: number;
   private readonly baselineReplayed = new Set<string>();
   private readonly inferredWithdrawn = new Set<string>();
+  private readonly queueLiveRevisionBumped = new WeakSet<DshServerRequest<DshMuxFrame>>();
   private baselineOpen = false;
   private baselineTimer: ReturnType<typeof setTimeout> | undefined;
   private controller: AbortController | undefined;
   private loopPromise: Promise<void> | undefined;
+  private stopping = false;
+  private readonly reconciliationPromises = new Set<Promise<void>>();
 
   constructor(
     private readonly config: BridgeConfig,
@@ -276,6 +309,7 @@ export class DshConnectionManager implements DshConnection {
 
   start(): void {
     if (this.loopPromise !== undefined) return;
+    this.stopping = false;
     this.controller = new AbortController();
     this.setState({ ...this.state, availability: "connecting" });
     this.loopPromise = this.run(this.controller.signal).finally(() => {
@@ -285,9 +319,11 @@ export class DshConnectionManager implements DshConnection {
   }
 
   async stop(): Promise<void> {
+    this.stopping = true;
     const loop = this.loopPromise;
     this.controller?.abort();
     if (loop !== undefined) await loop;
+    await this.waitForReconciliations();
     this.clearApprovalTimers();
     this.clearBaselineTimer();
     this.setState({ ...this.state, availability: "stopped", disconnectedAt: new Date().toISOString() });
@@ -590,15 +626,9 @@ export class DshConnectionManager implements DshConnection {
       }
     } else if (frame.type === "question/resolved") {
       this.tombstone(frame.questionRpcId, frame.sessionId, frame.type);
-    } else if (frame.type === "session/queue") {
-      this.queues.set(frame.sessionId, {
-        known: true,
-        stale: false,
-        connectionEpoch: this.state.connectionEpoch,
-        updatedAt: new Date().toISOString(),
-        items: structuredClone(frame.items),
-      });
     }
+
+    const queueLiveChanged = frame.type === "session/queue" ? this.updateQueueView(frame.sessionId, frame.items) : false;
 
     const sessionId = sessionIdOf(frame);
     if (sessionId === undefined) return;
@@ -616,16 +646,26 @@ export class DshConnectionManager implements DshConnection {
     }
 
     if (runtime.reconciling) {
+      if (queueLiveChanged) {
+        this.queueLiveRevisionBumped.add(envelope);
+        this.bumpRevision(runtime.taskId);
+      }
       runtime.buffer.push(envelope);
       return;
     }
 
-    await this.appendEnvelope(runtime, envelope);
-    this.bumpRevision(runtime.taskId);
+    // Queue frames can be locally observable even when another process already
+    // won the durable structural append; jobs have no live cache and only wake
+    // on a durable ledger change.
+    const durableAppended = await this.appendEnvelope(runtime, envelope);
+    if (durableAppended || queueLiveChanged) this.bumpRevision(runtime.taskId);
   }
 
-  private async appendEnvelope(runtime: SessionRuntime, envelope: DshServerRequest<DshMuxFrame>): Promise<void> {
+  // Top-level projections and ephemeral assistant stream chunks are not ledger
+  // records. Other top-level frames, including session/jobs, remain durable.
+  private async appendEnvelope(runtime: SessionRuntime, envelope: DshServerRequest<DshMuxFrame>): Promise<boolean> {
     const frame = envelope.payload;
+    if (isEphemeralContentStreamFrame(frame) || isTopLevelProjectionFrame(frame)) return false;
     if (isPendingFrame(frame) && this.inferredWithdrawn.delete(envelope.rpcId)) {
       await this.ledger.append(runtime.taskId, {
         sourceSessionId: runtime.lineage.sessionId,
@@ -638,9 +678,9 @@ export class DshConnectionManager implements DshConnection {
           ...(frame.type === "approval/requested" ? { approvalId: frame.approvalId } : {}),
         },
       });
-      return;
+      return true;
     }
-    await this.ledger.append(runtime.taskId, {
+    const appended = await this.ledger.append(runtime.taskId, {
       sourceSessionId: runtime.lineage.sessionId,
       ...(frame.type === "session/event" ? { sourceSeq: frame.event.seq } : {}),
       ...(runtime.lineage.parentSessionId === undefined ? {} : { parentSessionId: runtime.lineage.parentSessionId }),
@@ -648,6 +688,8 @@ export class DshConnectionManager implements DshConnection {
       type: frame.type,
       raw: envelope,
     });
+    if (frame.type === "session/queue" || frame.type === "session/jobs") return appended !== undefined;
+    return true;
   }
 
   private async reconcileAll(signal?: AbortSignal): Promise<void> {
@@ -661,11 +703,12 @@ export class DshConnectionManager implements DshConnection {
   }
 
   private async reconcileSession(sessionId: string, signal?: AbortSignal): Promise<void> {
+    if (this.stopping || signal?.aborted === true) return;
     const runtime = this.sessions.get(sessionId);
     if (runtime === undefined) return;
     if (runtime.reconcilePromise !== undefined) return runtime.reconcilePromise;
     runtime.reconciling = true;
-    const work = (async () => {
+    const operation = (async () => {
       const snapshot = await this.ledger.snapshot(runtime.taskId);
       const highWatermark = snapshot.watermarks[sessionId] ?? -1;
       if (runtime.subscribedLastSeq !== undefined && runtime.subscribedLastSeq <= highWatermark) {
@@ -704,6 +747,7 @@ export class DshConnectionManager implements DshConnection {
           return;
         }
         for (const entry of recovered) {
+          if (isEphemeralContentStreamType(entry.event.type)) continue;
           await this.ledger.append(runtime.taskId, {
             sourceSessionId: sessionId,
             sourceSeq: entry.event.seq,
@@ -715,12 +759,29 @@ export class DshConnectionManager implements DshConnection {
         }
       }
       await this.drainBuffer(runtime);
-    })().finally(() => {
+    })();
+    const work = operation.finally(() => {
       runtime.reconciling = false;
       runtime.reconcilePromise = undefined;
     });
     runtime.reconcilePromise = work;
+    this.reconciliationPromises.add(work);
+    void work.then(
+      () => this.reconciliationPromises.delete(work),
+      () => this.reconciliationPromises.delete(work),
+    );
     return work;
+  }
+
+  private async waitForReconciliations(): Promise<void> {
+    // No new reconciliation may start once stopping is set. Looping still
+    // closes the small observation window where a settling promise clears
+    // itself in finally while stop is collecting the current runtimes.
+    while (true) {
+      const pending = [...this.reconciliationPromises];
+      if (pending.length === 0) return;
+      await Promise.allSettled(pending);
+    }
   }
 
   private async readMissingHistory(runtime: SessionRuntime, highWatermark: number, signal?: AbortSignal) {
@@ -771,8 +832,24 @@ export class DshConnectionManager implements DshConnection {
         const rightSeq = right.payload.type === "session/event" ? right.payload.event.seq : Number.MAX_SAFE_INTEGER;
         return leftSeq - rightSeq;
       });
-      for (const envelope of batch) await this.appendEnvelope(runtime, envelope);
+      for (const envelope of batch) {
+        const durableAppended = await this.appendEnvelope(runtime, envelope);
+        if (durableAppended && !this.queueLiveRevisionBumped.has(envelope)) this.bumpRevision(runtime.taskId);
+      }
     }
+  }
+
+  private updateQueueView(sessionId: string, items: DshQueuedInboxItem[]): boolean {
+    const previous = this.queues.get(sessionId);
+    const changed = queueViewChanged(previous, items, this.state.connectionEpoch);
+    this.queues.set(sessionId, {
+      known: true,
+      stale: false,
+      connectionEpoch: this.state.connectionEpoch,
+      updatedAt: new Date().toISOString(),
+      items: structuredClone(items),
+    });
+    return changed;
   }
 
   private installRuntime(taskId: string, row: TaskLineageSession): void {

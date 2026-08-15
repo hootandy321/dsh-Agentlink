@@ -58,7 +58,9 @@ dsh-Agentlink 是一个让你直接在原本的 AI 工作工具里调用 DeepSee
    npm run doctor
    ```
 
-通过 `/mcp` 或 Codex 设置确认 `dsh_agentlink` 已连接。需要完全手动编辑 TOML 或查看全部环境变量时，请阅读[手动 Codex MCP 配置](docs/manual-configuration.zh-CN.md)。
+通过 `/mcp` 或 Codex 设置确认 `dsh_agentlink` 已连接。doctor 还会以只读方式报告 `DSH_BRIDGE_HOME` 下的 fail-closed 锁位置，且从不清理它们，因此即使存在锁也能安全运行。需要完全手动编辑 TOML 或查看全部环境变量时，请阅读[手动 Codex MCP 配置](docs/manual-configuration.zh-CN.md)。
+
+当前源码补丁会阻止新的 projection/chunk 洪峰继续扩大 coordination ledger，但不会自动压缩已有的 5 MB 以上 ledger。请保留旧 bridge home 备查；新的委派可以选择独立的 `DSH_BRIDGE_HOME`。对话真源始终是 DSH `session.history`，不是 bridge ledger。保守恢复边界见[已知问题](KNOWN_ISSUES.md)。
 
 dsh-Agentlink 是安装在调用方一侧的插件，不是 DSH Cordis bundle；请不要使用 `dsh plugin --profile ... add ...` 安装。
 
@@ -103,7 +105,7 @@ DSH 为复杂任务提供持久 session、工具调用、subagent 和人工监�
 - `dsh_continue` — `dsh_followup` 的兼容别名
 - `dsh_status` — 返回 availability、execution、lineage、queue、pending interaction、final message 和 cursors
 - `dsh_tail` — 使用 bridge task cursor 读取有界事件摘要
-- `dsh_wait` — 最多等待 30 秒，直到出现新事件、状态、pending 或 terminal 变化
+- `dsh_wait` — 最多等待 30 秒，直到出现 durable event、状态变化、pending interaction 或 terminal 状态
 - `dsh_observe` — `dsh_wait` 的兼容别名；bridge cursor 取代原始 per-session seq cursor
 - `dsh_cancel` — `scope="turn"|"queue"`
 - `dsh_list` — 列出 task mapping，并附带当前派生状态
@@ -112,6 +114,8 @@ DSH 为复杂任务提供持久 session、工具调用、subagent 和人工监�
 - `dsh_release_workspace` — 显式释放持久化 workspace claim，但不关闭 DSH session
 
 正常委派没有 model 参数。目标模型只在安装或调整 DSH 时配置。每次 delegate 都会读取 `session.models.current` 并信任 Host 返回的 `routable`；bridge 不会修改模型，也不会根据 catalog group 自行推导 routability。
+
+`dsh_wait` 只观察 bridge 的持久化状态。assistant delta/chunk 帧和顶层 `session/projection` snapshot 会被跳过，因此不会 bump task revision，也不会唤醒 waiter；turn 结束后的完整 final message 仍可通过 status/tail 观察。
 
 ## 后续方向
 
@@ -132,4 +136,4 @@ DSH 为复杂任务提供持久 session、工具调用、subagent 和人工监�
 
 [MIT](LICENSE)
 
-Alpha 说明：DSH 仍处于 developer preview，本项目是独立社区项目，不代表 DeepSeek 或 OpenAI 官方背书；`0.1.0-alpha.1` 还存在一个已知的共享账本并发问题，升级或并发运行 bridge 前请阅读[已知问题](KNOWN_ISSUES.md)。
+Alpha 说明：DSH 仍处于 developer preview，本项目是独立社区项目，不代表 DeepSeek 或 OpenAI 官方背书。`0.1.0-alpha.1` 包含一个共享账本并发问题；修复已进入源码、尚待发布。升级或并发运行 bridge 前请阅读[已知问题](KNOWN_ISSUES.md)。

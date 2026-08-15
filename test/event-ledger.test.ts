@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { appendFile, chmod, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -16,6 +16,39 @@ function sessionEvent(seq: number, type: string, data: unknown) {
     method: "session/event",
     payload: { type: "session/event", sessionId: "root", event: { type, seq, time: 1000 + seq, data } },
   };
+}
+
+
+function muxFrame(type: "session/queue" | "session/jobs", sessionId: string, body: Record<string, unknown>, rpcId: string) {
+  return {
+    type: "server-request",
+    rpcId,
+    method: type,
+    payload: { type, sessionId, ...body },
+  };
+}
+
+function appendQueue(ledger: EventLedger, sessionId: string, rpcId: string, items: unknown[]) {
+  return ledger.append(taskId, {
+    sourceSessionId: sessionId,
+    origin: "root",
+    type: "session/queue",
+    raw: muxFrame("session/queue", sessionId, { items }, rpcId),
+  });
+}
+
+function appendJobs(ledger: EventLedger, sessionId: string, rpcId: string, jobs: unknown[]) {
+  return ledger.append(taskId, {
+    sourceSessionId: sessionId,
+    origin: "root",
+    type: "session/jobs",
+    raw: muxFrame("session/jobs", sessionId, { jobs }, rpcId),
+  });
+}
+
+async function readLedgerRecords(logPath: string): Promise<Record<string, unknown>[]> {
+  const rawText = await readFile(logPath, "utf8");
+  return rawText.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
 async function runLedgerWriter(home: string, sessionId: string, count: number): Promise<void> {
@@ -92,6 +125,39 @@ test("EventLedger deduplicates canonical events, folds turns, and rebuilds after
     assert.equal(JSON.stringify(lines).includes("do it"), false);
     assert.equal(JSON.stringify(lines).includes("done"), false);
   } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("EventLedger serial reports the original append error without an unhandled rejection and then recovers", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-dsh-ledger-"));
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown) => unhandled.push(reason);
+  process.on("unhandledRejection", onUnhandled);
+  try {
+    const ledger = new EventLedger(home);
+    await assert.rejects(
+      ledger.append(taskId, { origin: "root", type: "session/event", raw: { type: "session/event" } }),
+      (error: unknown) =>
+        error instanceof EventLedgerError &&
+        error.code === "invalid_record" &&
+        error.message === "ledger input is missing sourceSessionId",
+    );
+
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.deepEqual(unhandled, []);
+
+    const record = await ledger.append(taskId, {
+      sourceSessionId: "root",
+      sourceSeq: 0,
+      origin: "root",
+      type: "session/event",
+      raw: sessionEvent(0, "turn/start", { turn: 1 }),
+    });
+    assert.equal(record?.cursor, 1);
+    assert.equal((await ledger.snapshot(taskId)).cursor, 1);
+  } finally {
+    process.off("unhandledRejection", onUnhandled);
     await rm(home, { recursive: true, force: true });
   }
 });
@@ -293,6 +359,111 @@ test("EventLedger deduplicates question resolved by payload questionRpcId before
 
     assert.equal(duplicate, undefined);
     assert.equal((await ledger.snapshot(taskId)).cursor, 1);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+
+test("EventLedger structurally deduplicates concurrent queue and jobs snapshots across instances", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-dsh-ledger-snapshots-"));
+  try {
+    const ledgers = Array.from({ length: 26 }, () => new EventLedger(home));
+    const queueItems = [{ id: "queued-1", placement: "queued", message: { content: "SECRET queue body" }, label: "SECRET label" }];
+    const jobs = [{ id: "job-1", kind: "shell", status: "running", startedAt: "2026-08-15T00:00:00.000Z", detail: "SECRET job detail" }];
+
+    await Promise.all(ledgers.map((ledger, index) => appendQueue(ledger, "root", `queue-${index}`, queueItems)));
+    await Promise.all(ledgers.map((ledger, index) => appendJobs(ledger, "root", `jobs-${index}`, jobs)));
+
+    const snapshot = await new EventLedger(home).snapshot(taskId);
+    assert.equal(snapshot.cursor, 2);
+    const records = await readLedgerRecords(snapshot.logPath);
+    assert.deepEqual(records.map((record) => record.type), ["session/queue", "session/jobs"]);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("EventLedger snapshot dedupe is last-wins, session/type scoped, and survives restart", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-dsh-ledger-snapshots-"));
+  try {
+    const ledger = new EventLedger(home);
+    await appendQueue(ledger, "root", "queue-a1", []);
+    await appendQueue(ledger, "root", "queue-b", [{ id: "queued-1", placement: "queued", message: { content: "SECRET" } }]);
+    await appendQueue(ledger, "root", "queue-a2", []);
+
+    let snapshot = await ledger.snapshot(taskId);
+    assert.equal(snapshot.cursor, 3, "A to B to A must record each observed state transition");
+
+    await appendQueue(ledger, "child", "queue-child", []);
+    await appendJobs(ledger, "root", "jobs-root", [{ id: "job-1", status: "running", detail: "SECRET" }]);
+    snapshot = await ledger.snapshot(taskId);
+    assert.equal(snapshot.cursor, 5, "same projection under a different session or type is independent");
+
+    const restarted = new EventLedger(home);
+    const duplicate = await appendJobs(restarted, "root", "jobs-root-duplicate", [{ id: "job-1", status: "running", label: "SECRET" }]);
+    assert.equal(duplicate, undefined);
+    assert.equal((await restarted.snapshot(taskId)).cursor, 5);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("EventLedger treats old snapshot records without persisted projection as unknown", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-dsh-ledger-old-snapshot-"));
+  try {
+    const logDir = join(home, "ledgers", taskId);
+    await mkdir(logDir, { recursive: true, mode: 0o700 });
+    await chmod(join(home, "ledgers"), 0o700);
+    await chmod(logDir, 0o700);
+    await appendFile(
+      join(logDir, "events.jsonl"),
+      `${JSON.stringify({
+        cursor: 1,
+        mergeIndex: 1,
+        observedAt: "2026-08-15T00:00:00.000Z",
+        sourceSessionId: "root",
+        origin: "root",
+        type: "session/queue",
+        coordination: { type: "session/queue", sessionId: "root", rpcId: "old-queue" },
+      })}\n`,
+      { encoding: "utf8", mode: 0o600 },
+    );
+
+    const ledger = new EventLedger(home);
+    await appendQueue(ledger, "root", "queue-after-upgrade", []);
+    const duplicate = await appendQueue(ledger, "root", "queue-after-upgrade-duplicate", []);
+
+    assert.equal(duplicate, undefined);
+    assert.equal((await ledger.snapshot(taskId)).cursor, 2);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("EventLedger snapshot projections persist only structural fields", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-dsh-ledger-snapshot-secrets-"));
+  try {
+    const ledger = new EventLedger(home);
+    await appendQueue(ledger, "root", "queue-secret", [
+      { id: "queued-1", placement: "queued", message: { content: "SECRET queue message" }, label: "SECRET queue label", detail: "SECRET queue detail" },
+    ]);
+    await appendJobs(ledger, "root", "jobs-secret", [
+      { id: "job-1", kind: "shell", status: "running", startedAt: "2026-08-15T00:00:00.000Z", finishedAt: "", message: "SECRET job message", label: "SECRET job label", detail: "SECRET job detail" },
+    ]);
+
+    const snapshot = await ledger.snapshot(taskId);
+    const rawText = await readFile(snapshot.logPath, "utf8");
+    assert.equal(rawText.includes("SECRET"), false);
+    assert.equal(rawText.includes("message"), false);
+    assert.equal(rawText.includes("label"), false);
+    assert.equal(rawText.includes("detail"), false);
+
+    const records = await readLedgerRecords(snapshot.logPath);
+    assert.deepEqual(records.map((record) => record.snapshotProjection), [
+      { kind: "queue", items: [{ id: "queued-1", placement: "queued" }] },
+      { kind: "jobs", items: [{ id: "job-1", kind: "shell", status: "running", startedAt: "2026-08-15T00:00:00.000Z" }] },
+    ]);
   } finally {
     await rm(home, { recursive: true, force: true });
   }
