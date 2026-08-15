@@ -96,6 +96,39 @@ test("EventLedger deduplicates canonical events, folds turns, and rebuilds after
   }
 });
 
+test("EventLedger serial reports the original append error without an unhandled rejection and then recovers", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-dsh-ledger-"));
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown) => unhandled.push(reason);
+  process.on("unhandledRejection", onUnhandled);
+  try {
+    const ledger = new EventLedger(home);
+    await assert.rejects(
+      ledger.append(taskId, { origin: "root", type: "session/event", raw: { type: "session/event" } }),
+      (error: unknown) =>
+        error instanceof EventLedgerError &&
+        error.code === "invalid_record" &&
+        error.message === "ledger input is missing sourceSessionId",
+    );
+
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.deepEqual(unhandled, []);
+
+    const record = await ledger.append(taskId, {
+      sourceSessionId: "root",
+      sourceSeq: 0,
+      origin: "root",
+      type: "session/event",
+      raw: sessionEvent(0, "turn/start", { turn: 1 }),
+    });
+    assert.equal(record?.cursor, 1);
+    assert.equal((await ledger.snapshot(taskId)).cursor, 1);
+  } finally {
+    process.off("unhandledRejection", onUnhandled);
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
 test("EventLedger folds pending interactions, accepted responses, bounded tail, and explicit gaps", async () => {
   const home = await mkdtemp(join(tmpdir(), "codex-dsh-ledger-"));
   try {

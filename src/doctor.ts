@@ -8,6 +8,7 @@ import type { BridgeConfig } from "./config.js";
 import { loadConfig } from "./config.js";
 import { DshClient } from "./dsh-client.js";
 import type { DshApi } from "./dsh-types.js";
+import { collectLockDiagnostics } from "./lock-doctor.js";
 
 const execFileAsync = promisify(execFile);
 const TESTED_CLI_VERSION = "0.1.0-rc.6";
@@ -71,6 +72,7 @@ export async function runDoctor(
   cliVersionProbe: CliVersionProbe = probeDshCliVersion,
 ) {
   const cliVersion = await cliVersionProbe();
+  const lockDiagnostics = await collectLockDiagnostics(config.homeDir);
   try {
     const description = await api.hostDescribe();
     const sessions = await api.sessionList();
@@ -115,6 +117,7 @@ export async function runDoctor(
       muxError: mux.error,
       sessionCount: sessions.items.length,
       description,
+      lockDiagnostics,
     };
   } catch (error) {
     return {
@@ -128,6 +131,7 @@ export async function runDoctor(
       error: error instanceof Error ? { name: error.name, message: error.message } : { message: String(error) },
       startCommand: startCommand(config.hostUrl),
       note: "The bridge never starts, daemonizes, or stops dsh web; run this command yourself or manage it with the OS.",
+      lockDiagnostics,
     };
   }
 }

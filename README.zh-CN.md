@@ -58,7 +58,9 @@ dsh-Agentlink 是一个让你直接在原本的 AI 工作工具里调用 DeepSee
    npm run doctor
    ```
 
-通过 `/mcp` 或 Codex 设置确认 `dsh_agentlink` 已连接。需要完全手动编辑 TOML 或查看全部环境变量时，请阅读[手动 Codex MCP 配置](docs/manual-configuration.zh-CN.md)。
+通过 `/mcp` 或 Codex 设置确认 `dsh_agentlink` 已连接。doctor 还会以只读方式报告 `DSH_BRIDGE_HOME` 下的 fail-closed 锁位置，且从不清理它们，因此即使存在锁也能安全运行。需要完全手动编辑 TOML 或查看全部环境变量时，请阅读[手动 Codex MCP 配置](docs/manual-configuration.zh-CN.md)。
+
+当前源码补丁会阻止新的 projection/chunk 洪峰继续扩大 coordination ledger，但不会自动压缩已有的 5 MB 以上 ledger。请保留旧 bridge home 备查；新的委派可以选择独立的 `DSH_BRIDGE_HOME`。对话真源始终是 DSH `session.history`，不是 bridge ledger。保守恢复边界见[已知问题](KNOWN_ISSUES.md)。
 
 dsh-Agentlink 是安装在调用方一侧的插件，不是 DSH Cordis bundle；请不要使用 `dsh plugin --profile ... add ...` 安装。
 

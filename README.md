@@ -58,7 +58,9 @@ Do not start or stop dsh web for me. Tell me when I need to restart Codex.
    npm run doctor
    ```
 
-Use `/mcp` or Codex Settings to confirm that `dsh_agentlink` is connected. For a fully manual TOML setup and all environment variables, see [Manual Codex MCP configuration](docs/manual-configuration.md).
+Use `/mcp` or Codex Settings to confirm that `dsh_agentlink` is connected. The doctor also reports the bridge's fail-closed lock locations under `DSH_BRIDGE_HOME` read-only and never cleans them, so it is safe to run even when a lock is present. For a fully manual TOML setup and all environment variables, see [Manual Codex MCP configuration](docs/manual-configuration.md).
+
+This source patch stops new projection/chunk floods from expanding the coordination ledger, but it does not compact an existing 5 MB+ ledger. Preserve the old bridge home for inspection; new delegations can use a separate `DSH_BRIDGE_HOME`. DSH `session.history`, not the bridge ledger, remains the conversation source of truth. See [Known issues](KNOWN_ISSUES.md) for the conservative recovery boundary.
 
 dsh-Agentlink is a caller-side plugin, not a DSH Cordis bundle. Do not install it with `dsh plugin --profile ... add ...`.
 

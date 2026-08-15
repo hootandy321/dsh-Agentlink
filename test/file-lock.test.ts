@@ -161,3 +161,45 @@ test("unexpected owner write errors preserve a replacement owner", async (t) => 
     await fs.rm(base, { recursive: true, force: true });
   }
 });
+
+test("unexpected owner write error preserves a competitor's empty replacement dir (fail closed)", async (t) => {
+  const base = await fs.mkdtemp(join(tmpdir(), "flock-empty-replacement-"));
+  try {
+    const lockDir = join(base, "lock");
+    const ownerPath = join(lockDir, "owner.json");
+    const mkdir = fs.mkdir.bind(fs);
+    const writeFile = fs.writeFile.bind(fs);
+    let interceptOnce = true;
+    let workRan = false;
+
+    t.mock.method(fs, "writeFile", async (...args: Parameters<typeof fs.writeFile>) => {
+      const [path] = args;
+      if (path === ownerPath && interceptOnce) {
+        interceptOnce = false;
+        // Competitor replaces the lockDir with its own empty directory before it
+        // writes owner.json. Our owner write then fails with an unexpected error.
+        // This is the exact window where the old rmdir cleanup would delete the
+        // competitor's in-progress lock.
+        await fs.rm(lockDir, { recursive: true, force: true });
+        await mkdir(lockDir, { recursive: true });
+        throw Object.assign(new Error("synthetic owner write failure"), { code: "EIO" });
+      }
+      return writeFile(...args);
+    });
+
+    await assert.rejects(
+      withFileLock(lockDir, async () => {
+        workRan = true;
+      }),
+      /synthetic owner write failure/,
+    );
+
+    assert.equal(workRan, false, "work callback must not run after an unexpected owner write error");
+    // Competitor's still-empty replacement directory must be preserved exactly.
+    await fs.stat(lockDir);
+    await assert.rejects(fs.stat(ownerPath), /ENOENT/);
+    assert.deepEqual(await fs.readdir(lockDir), []);
+  } finally {
+    await fs.rm(base, { recursive: true, force: true });
+  }
+});

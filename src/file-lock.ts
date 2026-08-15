@@ -54,16 +54,22 @@ export async function withFileLock<T>(
       // ENOENT (competitor removed the dir) and EEXIST (competitor replaced it with
       // their own lock) both mean this attempt already lost the race. Retry within
       // the original deadline and never rm the current lockDir, which may now belong
-      // to the competitor. Any other error is unexpected: clean up our attempt and throw.
+      // to the competitor. Any other error is unexpected: fail closed and throw without
+      // touching the current path.
       if (code === "ENOENT" || code === "EEXIST") {
         if (Date.now() >= deadline) throw new Error(`timed out acquiring file lock ${lockDir}`);
         await sleep(retryMs);
         continue;
       }
-      // We have not written our token, so we cannot prove ownership of the
-      // current path. rmdir can clean up only our still-empty attempt; if a
-      // competitor has installed owner.json it fails closed and preserves it.
-      await fs.rmdir(lockDir).catch(() => undefined);
+      // We have not written our token, so we cannot prove the current path is
+      // still our own mkdir attempt. A competitor may have replaced lockDir
+      // with an empty directory and not yet written its owner.json; rmdir
+      // would delete that live in-progress lock. So we fail closed and never
+      // remove an unverified current path. The trade-off is that an unexpected
+      // owner-write failure can leave our own empty attempt behind (when no
+      // competitor raced us), which later acquisitions see as EEXIST and time
+      // out on until operator cleanup — the safe direction, because deleting
+      // an unverified path is the destructive choice.
       throw error;
     }
   }

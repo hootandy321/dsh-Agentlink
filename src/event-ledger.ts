@@ -830,10 +830,17 @@ export class EventLedger {
   private async serial<T>(taskId: string, work: () => Promise<T>): Promise<T> {
     const previous = this.queues.get(taskId) ?? Promise.resolve();
     const next = previous.then(work, work);
-    const queued = next.finally(() => {
-      if (this.queues.get(taskId) === queued) this.queues.delete(taskId);
+    // The internal queue is only an ordering barrier. It must never retain the
+    // caller-facing rejection: `next.finally(...)` creates a second rejected
+    // promise which can become unhandled even after the caller catches `next`.
+    const barrier = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.queues.set(taskId, barrier);
+    void barrier.then(() => {
+      if (this.queues.get(taskId) === barrier) this.queues.delete(taskId);
     });
-    this.queues.set(taskId, queued);
     return next;
   }
 
