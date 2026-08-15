@@ -25,6 +25,12 @@ export interface DelegateInput {
   title?: string;
   waitSeconds?: number;
   workspaceMode?: WorkspaceClaimMode;
+  /**
+   * Optional existing DSH root session id to reuse instead of creating a new one.
+   * When provided the Host creates no new session; the bridge still registers a
+   * fresh task mapping so subsequent follow-up and observation calls remain valid.
+   */
+  sessionId?: string;
 }
 
 export interface WritePreconditions {
@@ -442,7 +448,7 @@ export class BridgeService {
 
     await this.api.hostDescribe();
     const agentPreset = input.agentPreset?.trim() || this.config.defaultAgentPreset;
-    const created = await this.api.sessionCreate({ cwd, ...(agentPreset === undefined ? {} : { agentPreset }) });
+    const created = await this.api.sessionCreate({ cwd, ...(agentPreset === undefined ? {} : { agentPreset }), ...(input.sessionId === undefined ? {} : { sessionId: input.sessionId }) });
 
     let task: TaskRecord;
     try {

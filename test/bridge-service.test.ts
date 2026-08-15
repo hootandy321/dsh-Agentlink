@@ -62,6 +62,25 @@ test("delegate validates cwd, never passes model, stays detached, and followup p
   }
 });
 
+test("delegate forwards sessionId to session.create when provided", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-dsh-service-"));
+  try {
+    const api = new FakeDshApi();
+    const tasks = new TaskStore(home);
+    const ledger = new EventLedger(home);
+    const connection = new FakeConnection(ledger);
+    const service = new BridgeService(config(home), api, tasks, connection, ledger);
+
+    const delegated = await service.delegate({ prompt: "Implement this", cwd: home, sessionId: "my-existing-session" });
+    assert.equal(delegated.accepted, true);
+    assert.equal(delegated.rootSessionId, "my-existing-session");
+    const create = api.calls.find((call) => call.method === "session.create");
+    assert.deepEqual(create?.payload, { cwd: await realpath(home), sessionId: "my-existing-session" });
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
 test("delegate retains the task mapping when route verification fails and does not prompt", async () => {
   const home = await mkdtemp(join(tmpdir(), "codex-dsh-service-"));
   try {
