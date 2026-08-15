@@ -89,13 +89,14 @@ export function createMcpServer(service: BridgeService): McpServer {
           cwd: z.string().min(1).describe("Existing absolute directory visible to the DSH Host."),
           agentPreset: z.string().min(1).optional(),
           title: z.string().min(1).optional(),
+          sessionId: z.string().min(1).optional().describe("Existing DSH root session id to reuse instead of creating a new one."),
           waitSeconds: z.number().int().min(0).max(30).default(0),
           workspaceMode: z.enum(["read-only", "exclusive-write"]).default("exclusive-write"),
         })
         .strict(),
       annotations: writeOnce,
     },
-    async ({ prompt, cwd, agentPreset, title, waitSeconds, workspaceMode }) =>
+    async ({ prompt, cwd, agentPreset, title, sessionId, waitSeconds, workspaceMode }) =>
       handled(() =>
         service.delegate({
           prompt,
@@ -104,6 +105,7 @@ export function createMcpServer(service: BridgeService): McpServer {
           workspaceMode,
           ...(agentPreset === undefined ? {} : { agentPreset }),
           ...(title === undefined ? {} : { title }),
+          ...(sessionId === undefined ? {} : { sessionId }),
         }),
       ),
   );

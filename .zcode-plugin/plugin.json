@@ -1,0 +1,47 @@
+{
+  "name": "dsh-agentlink",
+  "version": "0.1.0",
+  "description": "Delegate bounded code work to your local DeepSeek Harness (DSH) Web Host via STDIO MCP. Use for long-running, multi-turn coding sessions that need DSH's sandbox, model routing, and session history — keep the supervisor running in ZCode alongside.",
+  "description_i18n": {
+    "zh-CN": "通过 STDIO MCP 将代码工作委托给本地 DeepSeek Harness (DSH) Web Host。用于需要 DSH 沙箱、模型路由和会话历史的多轮长任务，让 ZCode 保持监督。"
+  },
+  "author": {
+    "name": "hootandy321",
+    "url": "https://github.com/hootandy321/dsh-Agentlink"
+  },
+  "license": "MIT",
+  "category": "developer-tools",
+  "keywords": ["dsh", "deepseek-harness", "mcp", "agent-collaboration", "coding"],
+  "icon": "https://cdn.z.ai/favicon.ico",
+  "skills": "skills",
+  "mcpServers": {
+    "dsh_agentlink": {
+      "command": "node",
+      "args": [
+        "${PLUGIN_ROOT}/dist/index.js"
+      ],
+      "cwd": "${ZCODE_PROJECT_DIR}",
+      "env": {
+        "DSH_HOST_URL": "${user_config.dsh_host_url}",
+        "DSH_BRIDGE_AGENT_PRESET": "${user_config.agent_preset}"
+      }
+    }
+  },
+  "tools": {
+    "dsh_resolve_approval": {
+      "approval_mode": "prompt"
+    }
+  },
+  "userConfig": {
+    "dsh_host_url": {
+      "type": "string",
+      "default": "http://127.0.0.1:3080",
+      "description": "The URL of the running DSH Web Host that this bridge connects to."
+    },
+    "agent_preset": {
+      "type": "string",
+      "default": "code",
+      "description": "DSH agent preset to use for delegated tasks. 'code' uses DSH Code Mode with full filesystem sandbox."
+    }
+  }
+}
