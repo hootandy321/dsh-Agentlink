@@ -25,6 +25,7 @@ export interface LedgerRecord {
   origin: LedgerOrigin;
   type: string;
   metadata?: Record<string, unknown>;
+  snapshotProjection?: SnapshotProjection;
   coordination: unknown;
 }
 
@@ -116,11 +117,17 @@ interface FoldState {
   turnHadAssistant: boolean;
 }
 
+interface SnapshotProjection {
+  kind: "queue" | "jobs";
+  items: ReadonlyArray<Record<string, string>>;
+}
+
 interface TaskState {
   loaded: boolean;
   loading?: Promise<void>;
   records: LedgerRecord[];
   seenKeys: Set<string>;
+  latestSnapshotProjections: Map<string, string>;
   bridgeIssuedRpcIds: Set<string>;
   fold: FoldState;
 }
@@ -272,6 +279,74 @@ function safePayloadFields(raw: unknown): Record<string, unknown> {
     ...(turnStartCursor === undefined ? {} : { turnStartCursor }),
     ...(code === undefined ? {} : { error: { code } }),
   };
+}
+
+function snapshotProjectionKey(recordType: string, sourceSessionId: string): string | undefined {
+  if (recordType === "session/queue" || recordType === "session/jobs") return `${recordType}:${sourceSessionId}`;
+  return undefined;
+}
+
+function snapshotProjection(input: LedgerAppendInput, recordType: string): SnapshotProjection | undefined {
+  const payload = payloadOf(input.raw);
+  const payloadObject = asObject(payload);
+  if (payloadObject === undefined) return undefined;
+
+  if (recordType === "session/queue") {
+    const items = payloadObject.items;
+    if (!Array.isArray(items)) return undefined;
+    const projected = items.map((item): Record<string, string> | undefined => {
+      const id = stringField(item, "id");
+      const placement = stringField(item, "placement");
+      return id === undefined || placement === undefined ? undefined : { id, placement };
+    });
+    if (projected.some((item) => item === undefined)) return undefined;
+    return { kind: "queue", items: projected as Record<string, string>[] };
+  }
+
+  if (recordType === "session/jobs") {
+    const jobs = payloadObject.jobs;
+    if (!Array.isArray(jobs)) return undefined;
+    const projected = jobs.map((job): Record<string, string> | undefined => {
+      const id = stringField(job, "id");
+      if (id === undefined) return undefined;
+      const kind = stringField(job, "kind");
+      const status = stringField(job, "status");
+      const startedAt = stringField(job, "startedAt");
+      const finishedAt = stringField(job, "finishedAt");
+      return {
+        id,
+        ...(kind === undefined ? {} : { kind }),
+        ...(status === undefined ? {} : { status }),
+        ...(startedAt === undefined ? {} : { startedAt }),
+        ...(finishedAt === undefined ? {} : { finishedAt }),
+      };
+    });
+    if (projected.some((job) => job === undefined)) return undefined;
+    return { kind: "jobs", items: (projected as Record<string, string>[]).sort((left, right) => String(left.id).localeCompare(String(right.id))) };
+  }
+
+  return undefined;
+}
+
+function projectionSignature(projection: SnapshotProjection): string {
+  return JSON.stringify(projection);
+}
+
+function parseSnapshotProjection(value: unknown): SnapshotProjection | undefined {
+  const object = asObject(value);
+  if (object === undefined || (object.kind !== "queue" && object.kind !== "jobs") || !Array.isArray(object.items)) return undefined;
+  const items = object.items.map((item): Record<string, string> | undefined => {
+    const itemObject = asObject(item);
+    if (itemObject === undefined) return undefined;
+    const projected: Record<string, string> = {};
+    for (const [key, field] of Object.entries(itemObject)) {
+      if (typeof field !== "string") return undefined;
+      projected[key] = field;
+    }
+    return projected;
+  });
+  if (items.some((item) => item === undefined)) return undefined;
+  return { kind: object.kind, items: items as Record<string, string>[] };
 }
 
 function recordMetadata(recordType: string, input: LedgerAppendInput, state: TaskState): Record<string, unknown> | undefined {
@@ -555,6 +630,7 @@ function parseRecord(line: string, logPath: string): LedgerRecord {
   const value = JSON.parse(line) as unknown;
   const object = asObject(value);
   const cursor = object?.cursor;
+  const parsedSnapshotProjection = parseSnapshotProjection(object?.snapshotProjection);
   if (
     object === undefined ||
     !Number.isInteger(cursor) ||
@@ -580,6 +656,7 @@ function parseRecord(line: string, logPath: string): LedgerRecord {
     origin: object.origin as LedgerOrigin,
     type: object.type as string,
     ...(asObject(object.metadata) === undefined ? {} : { metadata: object.metadata as Record<string, unknown> }),
+    ...(parsedSnapshotProjection === undefined ? {} : { snapshotProjection: parsedSnapshotProjection }),
     coordination: object.coordination,
   };
 }
@@ -694,6 +771,10 @@ export class EventLedger {
         if (recordType === undefined) throw new EventLedgerError("invalid_record", "ledger input is missing type");
         const key = stableKey(input, recordType, sourceSessionId);
         if (key !== undefined && state.seenKeys.has(key)) return undefined;
+        const projection = snapshotProjection(input, recordType);
+        const projectionKey = snapshotProjectionKey(recordType, sourceSessionId);
+        const projectionSig = projection === undefined ? undefined : projectionSignature(projection);
+        if (projectionKey !== undefined && projectionSig !== undefined && state.latestSnapshotProjections.get(projectionKey) === projectionSig) return undefined;
 
         const cursor = state.fold.snapshot.cursor + 1;
         const sourceSeq = input.sourceSeq ?? rawSourceSeq(input.raw);
@@ -709,6 +790,7 @@ export class EventLedger {
           origin: input.origin ?? (parentSessionId === undefined ? "root" : "subagent"),
           type: recordType,
           ...(metadata === undefined ? {} : { metadata }),
+          ...(projection === undefined ? {} : { snapshotProjection: projection }),
           coordination: sanitizedRaw(input, recordType, sourceSessionId, sourceSeq),
         };
 
@@ -716,6 +798,7 @@ export class EventLedger {
         await chmod(this.logPath(taskId), 0o600);
         state.records.push(record);
         if (key !== undefined) state.seenKeys.add(key);
+        this.indexSnapshotProjection(state, record);
         this.indexCoordinationMetadata(state, record);
         foldRecord(state.fold, record);
         this.notify(taskId, record.cursor);
@@ -857,6 +940,7 @@ export class EventLedger {
       loaded: false,
       records: [],
       seenKeys: new Set(),
+      latestSnapshotProjections: new Map(),
       bridgeIssuedRpcIds: new Set(),
       fold: emptyFold(this.logPath(taskId)),
     };
@@ -886,6 +970,7 @@ export class EventLedger {
       loaded: true,
       records: [],
       seenKeys: new Set(),
+      latestSnapshotProjections: new Map(),
       bridgeIssuedRpcIds: new Set(),
       fold: emptyFold(this.logPath(taskId)),
     };
@@ -926,6 +1011,7 @@ export class EventLedger {
         record.sourceSessionId,
       );
       if (key !== undefined) state.seenKeys.add(key);
+      this.indexSnapshotProjection(state, record);
       this.indexCoordinationMetadata(state, record);
       foldRecord(state.fold, record);
     }
@@ -941,6 +1027,12 @@ export class EventLedger {
         initiatedBy: state.bridgeIssuedRpcIds.has(sourceRpcId) ? "bridge" : "external_or_unknown",
       };
     }
+  }
+
+  private indexSnapshotProjection(state: TaskState, record: LedgerRecord): void {
+    if (record.snapshotProjection === undefined) return;
+    const key = snapshotProjectionKey(record.type, record.sourceSessionId);
+    if (key !== undefined) state.latestSnapshotProjections.set(key, projectionSignature(record.snapshotProjection));
   }
 
   private indexCoordinationMetadata(state: TaskState, record: LedgerRecord): void {

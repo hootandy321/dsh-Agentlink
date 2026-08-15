@@ -8,6 +8,7 @@ import { withFileLock } from "../src/file-lock.js";
 
 const maker = (token: string, pid = process.pid) =>
   JSON.stringify({ pid, token, createdAt: new Date().toISOString() });
+const timeoutGuidancePattern = /timed out acquiring file lock .*npm run doctor.*KNOWN_ISSUES\.md.*manual cleanup/;
 
 test("withFileLock retries on ENOENT after mkdir (lost race), then acquires and runs work", async (t) => {
   const base = await fs.mkdtemp(join(tmpdir(), "flock-enoent-"));
@@ -77,7 +78,7 @@ test("withFileLock on EEXIST (competitor replaces dir) retries, never deletes co
         retryMs: 0,
         staleMs: 5_000,
       }),
-      /timed out acquiring file lock/,
+      timeoutGuidancePattern,
     );
     assert.equal(lockMkdirCalls, 2, "EEXIST must retry once before the original deadline expires");
     assert.equal(workRan, false, "work callback must not run under EEXIST");
@@ -112,7 +113,7 @@ test("withFileLock fails closed instead of reaping an observed stale owner", asy
         workRan = true;
         return "acquired";
       }, { timeoutMs: 0, retryMs: 0, staleMs: 0 }),
-      /timed out acquiring file lock/,
+      timeoutGuidancePattern,
     );
 
     assert.equal(renameCalls, 0, "stale observations must not trigger a destructive rename");

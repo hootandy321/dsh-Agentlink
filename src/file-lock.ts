@@ -16,6 +16,12 @@ function errorCode(error: unknown): string | undefined {
   return error instanceof Error && "code" in error ? (error as NodeJS.ErrnoException).code : undefined;
 }
 
+function lockTimeoutError(lockDir: string): Error {
+  return new Error(
+    `timed out acquiring file lock ${lockDir}. Run "npm run doctor" to inspect fail-closed locks; see KNOWN_ISSUES.md and verify the exact path before any manual cleanup.`,
+  );
+}
+
 export async function withFileLock<T>(
   lockDir: string,
   work: () => Promise<T>,
@@ -38,7 +44,7 @@ export async function withFileLock<T>(
       await fs.mkdir(lockDir, { mode: 0o700 });
     } catch (error) {
       if (errorCode(error) !== "EEXIST") throw error;
-      if (Date.now() >= deadline) throw new Error(`timed out acquiring file lock ${lockDir}`);
+      if (Date.now() >= deadline) throw lockTimeoutError(lockDir);
       await sleep(retryMs);
       continue;
     }
@@ -57,7 +63,7 @@ export async function withFileLock<T>(
       // to the competitor. Any other error is unexpected: fail closed and throw without
       // touching the current path.
       if (code === "ENOENT" || code === "EEXIST") {
-        if (Date.now() >= deadline) throw new Error(`timed out acquiring file lock ${lockDir}`);
+        if (Date.now() >= deadline) throw lockTimeoutError(lockDir);
         await sleep(retryMs);
         continue;
       }

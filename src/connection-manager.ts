@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from "node:util";
+
 import type { BridgeConfig } from "./config.js";
 import { DshRpcError, DshTransportError } from "./dsh-client.js";
 import type { EventLedger, LedgerSnapshot } from "./event-ledger.js";
@@ -150,6 +152,16 @@ function copyPending(envelope: DshPendingEnvelope): DshPendingEnvelope {
   return structuredClone(envelope);
 }
 
+function queueViewChanged(previous: QueueSnapshot | undefined, items: DshQueuedInboxItem[], connectionEpoch: number): boolean {
+  return (
+    previous === undefined ||
+    !previous.known ||
+    previous.stale ||
+    previous.connectionEpoch !== connectionEpoch ||
+    !isDeepStrictEqual(previous.items, items)
+  );
+}
+
 function isPendingFrame(frame: DshMuxFrame): frame is DshPendingEnvelope["payload"] {
   return frame.type === "approval/requested" || frame.type === "question/requested";
 }
@@ -255,6 +267,7 @@ export class DshConnectionManager implements DshConnection {
   private readonly baselineQuietMs: number;
   private readonly baselineReplayed = new Set<string>();
   private readonly inferredWithdrawn = new Set<string>();
+  private readonly queueLiveRevisionBumped = new WeakSet<DshServerRequest<DshMuxFrame>>();
   private baselineOpen = false;
   private baselineTimer: ReturnType<typeof setTimeout> | undefined;
   private controller: AbortController | undefined;
@@ -613,15 +626,9 @@ export class DshConnectionManager implements DshConnection {
       }
     } else if (frame.type === "question/resolved") {
       this.tombstone(frame.questionRpcId, frame.sessionId, frame.type);
-    } else if (frame.type === "session/queue") {
-      this.queues.set(frame.sessionId, {
-        known: true,
-        stale: false,
-        connectionEpoch: this.state.connectionEpoch,
-        updatedAt: new Date().toISOString(),
-        items: structuredClone(frame.items),
-      });
     }
+
+    const queueLiveChanged = frame.type === "session/queue" ? this.updateQueueView(frame.sessionId, frame.items) : false;
 
     const sessionId = sessionIdOf(frame);
     if (sessionId === undefined) return;
@@ -639,13 +646,19 @@ export class DshConnectionManager implements DshConnection {
     }
 
     if (runtime.reconciling) {
+      if (queueLiveChanged) {
+        this.queueLiveRevisionBumped.add(envelope);
+        this.bumpRevision(runtime.taskId);
+      }
       runtime.buffer.push(envelope);
       return;
     }
 
-    // Only bump the connection revision for durable ledger records.
-    const persisted = await this.appendEnvelope(runtime, envelope);
-    if (persisted) this.bumpRevision(runtime.taskId);
+    // Queue frames can be locally observable even when another process already
+    // won the durable structural append; jobs have no live cache and only wake
+    // on a durable ledger change.
+    const durableAppended = await this.appendEnvelope(runtime, envelope);
+    if (durableAppended || queueLiveChanged) this.bumpRevision(runtime.taskId);
   }
 
   // Top-level projections and ephemeral assistant stream chunks are not ledger
@@ -667,7 +680,7 @@ export class DshConnectionManager implements DshConnection {
       });
       return true;
     }
-    await this.ledger.append(runtime.taskId, {
+    const appended = await this.ledger.append(runtime.taskId, {
       sourceSessionId: runtime.lineage.sessionId,
       ...(frame.type === "session/event" ? { sourceSeq: frame.event.seq } : {}),
       ...(runtime.lineage.parentSessionId === undefined ? {} : { parentSessionId: runtime.lineage.parentSessionId }),
@@ -675,6 +688,7 @@ export class DshConnectionManager implements DshConnection {
       type: frame.type,
       raw: envelope,
     });
+    if (frame.type === "session/queue" || frame.type === "session/jobs") return appended !== undefined;
     return true;
   }
 
@@ -819,10 +833,23 @@ export class DshConnectionManager implements DshConnection {
         return leftSeq - rightSeq;
       });
       for (const envelope of batch) {
-        const persisted = await this.appendEnvelope(runtime, envelope);
-        if (persisted) this.bumpRevision(runtime.taskId);
+        const durableAppended = await this.appendEnvelope(runtime, envelope);
+        if (durableAppended && !this.queueLiveRevisionBumped.has(envelope)) this.bumpRevision(runtime.taskId);
       }
     }
+  }
+
+  private updateQueueView(sessionId: string, items: DshQueuedInboxItem[]): boolean {
+    const previous = this.queues.get(sessionId);
+    const changed = queueViewChanged(previous, items, this.state.connectionEpoch);
+    this.queues.set(sessionId, {
+      known: true,
+      stale: false,
+      connectionEpoch: this.state.connectionEpoch,
+      updatedAt: new Date().toISOString(),
+      items: structuredClone(items),
+    });
+    return changed;
   }
 
   private installRuntime(taskId: string, row: TaskLineageSession): void {

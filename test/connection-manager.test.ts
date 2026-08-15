@@ -52,7 +52,7 @@ function deferred() {
 
 function managerInternals(manager: DshConnectionManager) {
   return manager as unknown as {
-    sessions: Map<string, { subscribedLastSeq?: number }>;
+    sessions: Map<string, { reconciling: boolean; subscribedLastSeq?: number }>;
     reconcileSession(sessionId: string, signal?: AbortSignal): Promise<void>;
     onEnvelope(envelope: DshServerRequest<DshMuxFrame>, signal: AbortSignal): Promise<void>;
   };
@@ -253,6 +253,167 @@ test("buffer draining bumps revision only for durable frames", async () => {
   } finally {
     releaseSnapshot.resolve();
     await manager.stop();
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("buffered queue snapshot bumps once for live view and not again when drained", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-dsh-manager-buffered-queue-"));
+  const tasks = new TaskStore(home);
+  const task = await tasks.create("root-session");
+  const ledger = new EventLedger(home);
+  const manager = new DshConnectionManager(
+    { hostUrl: "http://127.0.0.1:3080", homeDir: home, requestTimeoutMs: 1_000, allowRemoteHost: false },
+    new FakeDshApi(),
+    tasks,
+    ledger,
+  );
+  const internals = managerInternals(manager);
+  const snapshotEntered = deferred();
+  const releaseSnapshot = deferred();
+  const originalSnapshot = ledger.snapshot.bind(ledger);
+  const beforeLedger = await originalSnapshot(task.taskId);
+  let blockSnapshot = true;
+  ledger.snapshot = async (taskId) => {
+    if (blockSnapshot) {
+      blockSnapshot = false;
+      snapshotEntered.resolve();
+      await releaseSnapshot.promise;
+    }
+    return originalSnapshot(taskId);
+  };
+
+  try {
+    await manager.trackTask(task);
+    internals.sessions.get("root-session")!.subscribedLastSeq = -1;
+    const revisionBefore = manager.snapshot().revision;
+    const reconciliation = internals.reconcileSession("root-session");
+    await snapshotEntered.promise;
+
+    await internals.onEnvelope(
+      muxEnvelope(
+        {
+          type: "session/queue",
+          sessionId: "root-session",
+          items: [{ id: "queued-1", placement: "queued", message: { role: "user", content: [{ type: "text", text: "buffered" }] } }],
+        },
+        "buffered-queue-rpc",
+      ),
+      new AbortController().signal,
+    );
+    assert.equal(manager.snapshot().revision, revisionBefore + 1);
+    assert.deepEqual(manager.queueForSession("root-session").items[0], {
+      id: "queued-1",
+      placement: "queued",
+      message: { role: "user", content: [{ type: "text", text: "buffered" }] },
+    });
+
+    releaseSnapshot.resolve();
+    await reconciliation;
+    const afterLedger = await originalSnapshot(task.taskId);
+    assert.equal(afterLedger.cursor, beforeLedger.cursor + 1);
+    assert.equal(manager.snapshot().revision, revisionBefore + 1);
+  } finally {
+    releaseSnapshot.resolve();
+    await manager.stop();
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("queue snapshots bump on durable or local live-view changes while jobs bump only on durable changes", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-dsh-manager-observable-"));
+  try {
+    const tasks = new TaskStore(home);
+    const task = await tasks.create("root-session");
+    const ledger = new EventLedger(home);
+    const api = new FakeDshApi();
+    const manager = new DshConnectionManager(
+      { hostUrl: "http://127.0.0.1:3080", homeDir: home, requestTimeoutMs: 1_000, allowRemoteHost: false },
+      api,
+      tasks,
+      ledger,
+      { reconnectDelayMs: 10 },
+    );
+    await manager.trackTask(task);
+    const runtime = managerInternals(manager).sessions.get("root-session");
+    assert.ok(runtime !== undefined);
+    runtime.reconciling = false;
+    const signal = new AbortController().signal;
+
+    let cursor = (await ledger.snapshot(task.taskId)).cursor;
+    let revision = manager.snapshot().revision;
+    await managerInternals(manager).onEnvelope(
+      muxEnvelope(
+        {
+          type: "session/queue",
+          sessionId: "root-session",
+          items: [{ id: "queued-1", placement: "queued", message: { role: "user", content: [{ type: "text", text: "first" }] } }],
+        },
+        "queue-1",
+      ),
+      signal,
+    );
+    assert.equal((await ledger.snapshot(task.taskId)).cursor, cursor + 1);
+    assert.equal(manager.snapshot().revision, revision + 1);
+    assert.deepEqual(manager.queueForSession("root-session").items[0], {
+      id: "queued-1",
+      placement: "queued",
+      message: { role: "user", content: [{ type: "text", text: "first" }] },
+    });
+
+    cursor = (await ledger.snapshot(task.taskId)).cursor;
+    revision = manager.snapshot().revision;
+    await managerInternals(manager).onEnvelope(
+      muxEnvelope(
+        {
+          type: "session/queue",
+          sessionId: "root-session",
+          items: [{ id: "queued-1", placement: "queued", message: { role: "user", content: [{ type: "text", text: "first" }] } }],
+        },
+        "queue-2",
+      ),
+      signal,
+    );
+    assert.equal((await ledger.snapshot(task.taskId)).cursor, cursor);
+    assert.equal(manager.snapshot().revision, revision);
+
+    await managerInternals(manager).onEnvelope(
+      muxEnvelope(
+        {
+          type: "session/queue",
+          sessionId: "root-session",
+          items: [{ id: "queued-1", placement: "queued", message: { role: "user", content: [{ type: "text", text: "edited" }] } }],
+        },
+        "queue-3",
+      ),
+      signal,
+    );
+    assert.equal((await ledger.snapshot(task.taskId)).cursor, cursor);
+    assert.equal(manager.snapshot().revision, revision + 1);
+    assert.deepEqual(manager.queueForSession("root-session").items[0], {
+      id: "queued-1",
+      placement: "queued",
+      message: { role: "user", content: [{ type: "text", text: "edited" }] },
+    });
+
+    cursor = (await ledger.snapshot(task.taskId)).cursor;
+    revision = manager.snapshot().revision;
+    await managerInternals(manager).onEnvelope(
+      muxEnvelope({ type: "session/jobs", sessionId: "root-session", jobs: [{ id: "job-1", status: "running", message: "SECRET job body" }] }, "jobs-1"),
+      signal,
+    );
+    assert.equal((await ledger.snapshot(task.taskId)).cursor, cursor + 1);
+    assert.equal(manager.snapshot().revision, revision + 1);
+
+    cursor = (await ledger.snapshot(task.taskId)).cursor;
+    revision = manager.snapshot().revision;
+    await managerInternals(manager).onEnvelope(
+      muxEnvelope({ type: "session/jobs", sessionId: "root-session", jobs: [{ id: "job-1", status: "running", message: "SECRET changed but structurally same" }] }, "jobs-2"),
+      signal,
+    );
+    assert.equal((await ledger.snapshot(task.taskId)).cursor, cursor);
+    assert.equal(manager.snapshot().revision, revision);
+  } finally {
     await rm(home, { recursive: true, force: true });
   }
 });

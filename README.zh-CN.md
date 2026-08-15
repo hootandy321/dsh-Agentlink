@@ -105,7 +105,7 @@ DSH 为复杂任务提供持久 session、工具调用、subagent 和人工监�
 - `dsh_continue` — `dsh_followup` 的兼容别名
 - `dsh_status` — 返回 availability、execution、lineage、queue、pending interaction、final message 和 cursors
 - `dsh_tail` — 使用 bridge task cursor 读取有界事件摘要
-- `dsh_wait` — 最多等待 30 秒，直到出现新事件、状态、pending 或 terminal 变化
+- `dsh_wait` — 最多等待 30 秒，直到出现 durable event、状态变化、pending interaction 或 terminal 状态
 - `dsh_observe` — `dsh_wait` 的兼容别名；bridge cursor 取代原始 per-session seq cursor
 - `dsh_cancel` — `scope="turn"|"queue"`
 - `dsh_list` — 列出 task mapping，并附带当前派生状态
@@ -114,6 +114,8 @@ DSH 为复杂任务提供持久 session、工具调用、subagent 和人工监�
 - `dsh_release_workspace` — 显式释放持久化 workspace claim，但不关闭 DSH session
 
 正常委派没有 model 参数。目标模型只在安装或调整 DSH 时配置。每次 delegate 都会读取 `session.models.current` 并信任 Host 返回的 `routable`；bridge 不会修改模型，也不会根据 catalog group 自行推导 routability。
+
+`dsh_wait` 只观察 bridge 的持久化状态。assistant delta/chunk 帧和顶层 `session/projection` snapshot 会被跳过，因此不会 bump task revision，也不会唤醒 waiter；turn 结束后的完整 final message 仍可通过 status/tail 观察。
 
 ## 后续方向
 

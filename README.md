@@ -105,7 +105,7 @@ Codex can then delegate the task, observe its event stream, continue the same se
 - `dsh_continue` — compatibility alias for `dsh_followup`
 - `dsh_status` — availability, execution, lineage, queue, pending interactions, final message, and cursors
 - `dsh_tail` — bounded event digests using a bridge task cursor
-- `dsh_wait` — wait up to 30 seconds for a new event/state/pending/terminal change
+- `dsh_wait` — wait up to 30 seconds for a durable event, state change, pending interaction, or terminal status
 - `dsh_observe` — compatibility alias around `dsh_wait`; bridge cursors replace raw session seq cursors
 - `dsh_cancel` — `scope="turn"|"queue"`
 - `dsh_list` — task mappings enriched with current derived status
@@ -114,6 +114,8 @@ Codex can then delegate the task, observe its event stream, continue the same se
 - `dsh_release_workspace` — explicitly release a persistent bridge workspace claim without closing the DSH session
 
 Normal delegation has no model argument. Configure the desired model only when installing or adjusting DSH. Each delegate reads `session.models.current` and trusts the Host's `routable` boolean; it neither changes the model nor derives routability from catalog groups.
+
+`dsh_wait` observes durable bridge state. Assistant delta/chunk frames and top-level `session/projection` snapshots are skipped, so they do not bump the task revision or wake waiters; complete final messages remain observable through status/tail after the turn ends.
 
 ## Roadmap
 

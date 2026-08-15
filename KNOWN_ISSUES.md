@@ -23,7 +23,7 @@ DSH conversation history remains owned by the DSH Web Host. Using a fresh bridge
 
 ### Crash-recovery trade-off
 
-The lock is intended for short critical sections on one local filesystem. It has no heartbeat, its PID/mtime observations are not valid on NFS, and the fixed build does not automatically delete an apparently stale lock. A process that is hard-killed while holding a lock can therefore leave an exact lock directory that causes later operations to time out. Stop every bridge process using that bridge home, preserve a backup, and inspect the exact owner before any manual cleanup; never delete the bridge home or a broad parent directory blindly.
+The lock is intended for short critical sections on one local filesystem. It has no heartbeat, its PID/mtime observations are not valid on NFS, and the fixed build does not automatically delete an apparently stale lock. A process that is hard-killed while holding a lock can therefore leave an exact lock directory that causes later operations to time out. An unexpected `owner.json` write failure such as `ENOSPC` or `EIO` can also leave an empty fail-closed lock directory, because the bridge cannot prove the directory still belongs to its own attempt. Stop every bridge process using that bridge home, preserve a backup, and inspect the exact owner before any manual cleanup; never delete the bridge home or a broad parent directory blindly.
 
 ### Doctor reports fail-closed locks read-only and never cleans them
 
