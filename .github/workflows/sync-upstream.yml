@@ -1,0 +1,76 @@
+name: Sync Upstream
+
+on:
+  schedule:
+    # 每 6 小时检查一次上游更新
+    - cron: '0 */6 * * *'
+  workflow_dispatch:  # 允许手动触发
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  sync-upstream:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "yyz0313"
+          git config user.email "yyz0313@users.noreply.github.com"
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/hootandy321/dsh-Agentlink.git 2>/dev/null || true
+          git fetch upstream main
+
+      - name: Check for upstream changes
+        id: check
+        run: |
+          UPSTREAM_HEAD=$(git rev-parse upstream/main)
+          LOCAL_HEAD=$(git rev-parse HEAD)
+          if [ "$UPSTREAM_HEAD" = "$LOCAL_HEAD" ]; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "Upstream main is up to date."
+          else
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "Upstream has new commits since last sync."
+          fi
+
+      - name: Merge upstream
+        if: steps.check.outputs.has_changes == 'true'
+        run: |
+          git merge upstream/main --no-edit
+          echo "Successfully merged upstream changes."
+
+      - name: Handle merge conflicts
+        if: failure()
+        run: |
+          echo "Merge conflict detected. Please resolve manually."
+          echo "Run: git merge upstream/main"
+          echo "Then: git add <files> && git commit"
+          exit 1
+
+      - name: Build after merge
+        if: steps.check.outputs.has_changes == 'true'
+        run: |
+          npm install --silent
+          npm run build
+          echo "Build completed successfully."
+
+      - name: Commit and push sync
+        if: steps.check.outputs.has_changes == 'true'
+        run: |
+          git add -A
+          git commit -m "chore: sync upstream main + auto-adapt" --allow-empty || true
+          git push origin main
+
+      - name: Notify no changes
+        if: steps.check.outputs.has_changes == 'false'
+        run: |
+          echo "No upstream changes to sync. Last synced commit: $(git log -1 --oneline upstream/main)"

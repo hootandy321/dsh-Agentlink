@@ -1,10 +1,10 @@
-# dsh-Agentlink
+﻿# dsh-Agentlink
 
 ![dsh-Agentlink cover](assets/dsh-agentlink-cover.webp)
 
 [![CI](https://github.com/hootandy321/dsh-Agentlink/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hootandy321/dsh-Agentlink/actions/workflows/ci.yml) [![GitHub Stars](https://img.shields.io/github/stars/hootandy321/dsh-Agentlink?style=flat-square&logo=github)](https://github.com/hootandy321/dsh-Agentlink/stargazers) [![License: MIT](https://img.shields.io/github/license/hootandy321/dsh-Agentlink?style=flat-square)](LICENSE) [![Node.js 22+](https://img.shields.io/badge/Node.js-22%2B-339933?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org/) [![DSH plugin](https://img.shields.io/badge/DSH-plugin-4B6BFB?style=flat-square)](https://www.deepseek.com/harness/en/)
 
-**English** | [简体中文](README.zh-CN.md)
+**English** | [绠€浣撲腑鏂嘳(README.zh-CN.md)
 
 dsh-Agentlink is a plugin that lets you use DeepSeek Harness (DSH) from the AI work tool you already use. Your primary agent can delegate implementation, research, debugging, and long-log work to DSH, then observe, continue, or cancel those sessions without leaving its normal workflow. Codex is supported today; Claude Code, Workbuddy, and other popular AI coding and agent tools are planned.
 
@@ -99,19 +99,19 @@ Codex can then delegate the task, observe its event stream, continue the same se
 
 ## MCP tools
 
-- `dsh_host_status` — connect-only Host state and capabilities
-- `dsh_delegate` — create a root session and queue the initial prompt; detached by default (`waitSeconds=0`)
-- `dsh_followup` — continue the same root session with explicit `mode="queue"|"steer"` (default `queue`)
-- `dsh_continue` — compatibility alias for `dsh_followup`
-- `dsh_status` — availability, execution, lineage, queue, pending interactions, final message, and cursors
-- `dsh_tail` — bounded event digests using a bridge task cursor
-- `dsh_wait` — wait up to 30 seconds for a durable event, state change, pending interaction, or terminal status
-- `dsh_observe` — compatibility alias around `dsh_wait`; bridge cursors replace raw session seq cursors
-- `dsh_cancel` — `scope="turn"|"queue"`
-- `dsh_list` — task mappings enriched with current derived status
-- `dsh_answer_question` — typed answer for a pending question rpcId
-- `dsh_resolve_approval` — typed `allow_once|reject` response for a pending approval rpcId
-- `dsh_release_workspace` — explicitly release a persistent bridge workspace claim without closing the DSH session
+- `dsh_host_status` 鈥?connect-only Host state and capabilities
+- `dsh_delegate` 鈥?create a root session and queue the initial prompt; detached by default (`waitSeconds=0`)
+- `dsh_followup` 鈥?continue the same root session with explicit `mode="queue"|"steer"` (default `queue`)
+- `dsh_continue` 鈥?compatibility alias for `dsh_followup`
+- `dsh_status` 鈥?availability, execution, lineage, queue, pending interactions, final message, and cursors
+- `dsh_tail` 鈥?bounded event digests using a bridge task cursor
+- `dsh_wait` 鈥?wait up to 30 seconds for a durable event, state change, pending interaction, or terminal status
+- `dsh_observe` 鈥?compatibility alias around `dsh_wait`; bridge cursors replace raw session seq cursors
+- `dsh_cancel` 鈥?`scope="turn"|"queue"`
+- `dsh_list` 鈥?task mappings enriched with current derived status
+- `dsh_answer_question` 鈥?typed answer for a pending question rpcId
+- `dsh_resolve_approval` 鈥?typed `allow_once|reject` response for a pending approval rpcId
+- `dsh_release_workspace` 鈥?explicitly release a persistent bridge workspace claim without closing the DSH session
 
 Normal delegation has no model argument. Configure the desired model only when installing or adjusting DSH. Each delegate reads `session.models.current` and trusts the Host's `routable` boolean; it neither changes the model nor derives routability from catalog groups.
 
@@ -121,15 +121,15 @@ Normal delegation has no model argument. Configure the desired model only when i
 
 These are planned directions, not implemented capabilities or release commitments.
 
-1. **Claude and other entrypoints** — explore Claude Code, Claude Desktop MCP, Workbuddy, and other callers connected to the same official DSH Web Host.
-2. **Agent invocation and information transport** — improve prompt organization, context packaging, output digests, and compression while keeping questions, approvals, errors, and final answers reliable.
-3. **More integrations** — expand after the Codex bridge and its compatibility contract stabilize.
+1. **Claude and other entrypoints** 鈥?explore Claude Code, Claude Desktop MCP, Workbuddy, and other callers connected to the same official DSH Web Host.
+2. **Agent invocation and information transport** 鈥?improve prompt organization, context packaging, output digests, and compression while keeping questions, approvals, errors, and final answers reliable.
+3. **More integrations** 鈥?expand after the Codex bridge and its compatibility contract stabilize.
 
 ## More documentation
 
-- [Architecture and safety model](docs/architecture.md) — identity, state, recovery, approvals, cancellation, and workspace coordination
-- [Validation guide](docs/validation.md) — compatibility and operator acceptance checks
-- [Known issues](KNOWN_ISSUES.md) — current upgrade and concurrency caveats
+- [Architecture and safety model](docs/architecture.md) 鈥?identity, state, recovery, approvals, cancellation, and workspace coordination
+- [Validation guide](docs/validation.md) 鈥?compatibility and operator acceptance checks
+- [Known issues](KNOWN_ISSUES.md) 鈥?current upgrade and concurrency caveats
 - [Contributing](CONTRIBUTING.md) and [security](SECURITY.md)
 
 ## License
@@ -137,3 +137,47 @@ These are planned directions, not implemented capabilities or release commitment
 [MIT](LICENSE)
 
 Alpha note: DSH is still in developer preview and this community project is independent of DeepSeek and OpenAI. `0.1.0-alpha.1` contains a shared-ledger concurrency bug; the fix is in source and pending release. Read [Known issues](KNOWN_ISSUES.md) before upgrading or running concurrent bridge processes.
+
+---
+
+## ZCode Adaptation (Second Development)
+
+> **This repository is a second development fork of [hootandy321/dsh-Agentlink](https://github.com/hootandy321/dsh-Agentlink).**
+> The original targets Codex; this fork adds **ZCode** plugin support on top of all original functionality.
+>
+> The `main` branch stays in sync with upstream automatically.
+
+### What we added
+
+| Path | Description |
+|------|-------------|
+| `.zcode-plugin/plugin.json` | ZCode plugin manifest with MCP server config, configurable Host URL and agent preset |
+| `skills/dsh-collab/SKILL.md` | ZCode-specific collaboration skill with full tool reference, workflow, and safety rules |
+| `scripts/install.ps1` | One-click ZCode MCP registration script with environment detection |
+| `.github/workflows/sync-upstream.yml` | Auto-sync GitHub Action (checks upstream every 6 hours) |
+
+### Auto-sync mechanism
+
+A GitHub Action runs every 6 hours:
+- Checks if `hootandy321/dsh-Agentlink` has new commits
+- Automatically merges into this repo's `main`
+- Logs conflicts in Actions for manual resolution
+- Our ZCode files (`.zcode-plugin/`, `skills/`, `scripts/`) are never overwritten
+
+Manual sync:
+```bash
+git fetch upstream main
+git merge upstream/main --no-edit
+npm run build
+```
+
+### Relationship with upstream
+
+| Project | Link |
+|---------|------|
+| Original (Codex) | https://github.com/hootandy321/dsh-Agentlink |
+| **This fork (ZCode)** | https://github.com/yyz0313/dsh-Agentlink |
+
+Both branches are maintained in parallel with full compatibility. Our commits only touch ZCode adaptation and functional enhancements (e.g., `sessionId` parameter), without modifying upstream logic.
+
+

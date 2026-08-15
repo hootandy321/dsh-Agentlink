@@ -1,45 +1,45 @@
-# dsh-Agentlink
+﻿# dsh-Agentlink
 
-![dsh-Agentlink 首图](assets/dsh-agentlink-cover.webp)
+![dsh-Agentlink 棣栧浘](assets/dsh-agentlink-cover.webp)
 
 [![CI](https://github.com/hootandy321/dsh-Agentlink/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hootandy321/dsh-Agentlink/actions/workflows/ci.yml) [![GitHub Stars](https://img.shields.io/github/stars/hootandy321/dsh-Agentlink?style=flat-square&logo=github)](https://github.com/hootandy321/dsh-Agentlink/stargazers) [![License: MIT](https://img.shields.io/github/license/hootandy321/dsh-Agentlink?style=flat-square)](LICENSE) [![Node.js 22+](https://img.shields.io/badge/Node.js-22%2B-339933?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org/) [![DSH plugin](https://img.shields.io/badge/DSH-plugin-4B6BFB?style=flat-square)](https://www.deepseek.com/harness/en/)
 
-[English](README.md) | **简体中文**
+[English](README.md) | **绠€浣撲腑鏂?*
 
-dsh-Agentlink 是一个让你直接在原本的 AI 工作工具里调用 DeepSeek Harness（DSH）协作的插件。你的主 agent 可以把实现、调研、调试和长日志整理等任务交给 DSH，再在原有工作流中观察、继续或取消对应会话。当前支持 Codex，后续计划持续适配 Claude Code、Workbuddy 等主流 AI coding 与 agent 工具。
+dsh-Agentlink 鏄竴涓浣犵洿鎺ュ湪鍘熸湰鐨?AI 宸ヤ綔宸ュ叿閲岃皟鐢?DeepSeek Harness锛圖SH锛夊崗浣滅殑鎻掍欢銆備綘鐨勪富 agent 鍙互鎶婂疄鐜般€佽皟鐮斻€佽皟璇曞拰闀挎棩蹇楁暣鐞嗙瓑浠诲姟浜ょ粰 DSH锛屽啀鍦ㄥ師鏈夊伐浣滄祦涓瀵熴€佺户缁垨鍙栨秷瀵瑰簲浼氳瘽銆傚綋鍓嶆敮鎸?Codex锛屽悗缁鍒掓寔缁€傞厤 Claude Code銆乄orkbuddy 绛変富娴?AI coding 涓?agent 宸ュ叿銆?
 
-## 安装
+## 瀹夎
 
-安装前先准备环境：只需要 **Node.js 22+**、**Codex** 和可以正常运行的 **DSH CLI**。先在 DSH 中配置一次你希望使用的模型，之后 dsh-Agentlink 会自动使用当前路由。
+瀹夎鍓嶅厛鍑嗗鐜锛氬彧闇€瑕?**Node.js 22+**銆?*Codex** 鍜屽彲浠ユ甯歌繍琛岀殑 **DSH CLI**銆傚厛鍦?DSH 涓厤缃竴娆′綘甯屾湜浣跨敤鐨勬ā鍨嬶紝涔嬪悗 dsh-Agentlink 浼氳嚜鍔ㄤ娇鐢ㄥ綋鍓嶈矾鐢便€?
 
-### 让你的 AI agent 帮你安装
+### 璁╀綘鐨?AI agent 甯綘瀹夎
 
-把下面的仓库地址和指令直接发给 Codex 或其他 coding agent：
+鎶婁笅闈㈢殑浠撳簱鍦板潃鍜屾寚浠ょ洿鎺ュ彂缁?Codex 鎴栧叾浠?coding agent锛?
 
 ```text
-请从 https://github.com/hootandy321/dsh-Agentlink 安装 dsh-Agentlink。
-先检查 Node.js 22+、DSH CLI 和我的 DSH Web Host，在我确认的目录中 clone；
-运行 npm install 和 npm run setup -- --yes，然后执行 npm test 与 npm run doctor。
-如果已经存在 dsh_agentlink 或旧版 dsh_collab 配置，先向我展示冲突，再决定是否使用 --replace。
-不要替我启动或停止 dsh web，完成后告诉我何时需要重启 Codex。
+璇蜂粠 https://github.com/hootandy321/dsh-Agentlink 瀹夎 dsh-Agentlink銆?
+鍏堟鏌?Node.js 22+銆丏SH CLI 鍜屾垜鐨?DSH Web Host锛屽湪鎴戠‘璁ょ殑鐩綍涓?clone锛?
+杩愯 npm install 鍜?npm run setup -- --yes锛岀劧鍚庢墽琛?npm test 涓?npm run doctor銆?
+濡傛灉宸茬粡瀛樺湪 dsh_agentlink 鎴栨棫鐗?dsh_collab 閰嶇疆锛屽厛鍚戞垜灞曠ず鍐茬獊锛屽啀鍐冲畾鏄惁浣跨敤 --replace銆?
+涓嶈鏇挎垜鍚姩鎴栧仠姝?dsh web锛屽畬鎴愬悗鍛婅瘔鎴戜綍鏃堕渶瑕侀噸鍚?Codex銆?
 ```
 
-### 手动安装
+### 鎵嬪姩瀹夎
 
-1. 检查环境。当前经过测试的 DSH CLI 目标是 `0.1.0-rc.6`。
+1. 妫€鏌ョ幆澧冦€傚綋鍓嶇粡杩囨祴璇曠殑 DSH CLI 鐩爣鏄?`0.1.0-rc.6`銆?
 
    ```bash
    node --version
    dsh --version
    ```
 
-2. 在独立终端启动官方 DSH Web Host。
+2. 鍦ㄧ嫭绔嬬粓绔惎鍔ㄥ畼鏂?DSH Web Host銆?
 
    ```bash
    dsh web
    ```
 
-3. 克隆仓库、安装依赖并运行配置向导。
+3. 鍏嬮殕浠撳簱銆佸畨瑁呬緷璧栧苟杩愯閰嶇疆鍚戝銆?
 
    ```bash
    git clone https://github.com/hootandy321/dsh-Agentlink.git
@@ -48,92 +48,129 @@ dsh-Agentlink 是一个让你直接在原本的 AI 工作工具里调用 DeepSee
    npm run setup
    ```
 
-   向导只会询问 Host 地址和 DSH agent preset，随后备份 Codex 配置，并以 `approval_mode = "prompt"` 安装 MCP 入口。它不会启动 DSH，也不会替你重启 Codex。
+   鍚戝鍙細璇㈤棶 Host 鍦板潃鍜?DSH agent preset锛岄殢鍚庡浠?Codex 閰嶇疆锛屽苟浠?`approval_mode = "prompt"` 瀹夎 MCP 鍏ュ彛銆傚畠涓嶄細鍚姩 DSH锛屼篃涓嶄細鏇夸綘閲嶅惎 Codex銆?
 
-   无交互使用默认值时运行 `npm run setup -- --yes`。需要更新已有配置时，请先检查原配置，再运行 `npm run setup -- --replace`。配置工具会识别旧版 `dsh_collab`，并且只在得到这次明确的替换授权后迁移为 `dsh_agentlink`。
+   鏃犱氦浜掍娇鐢ㄩ粯璁ゅ€兼椂杩愯 `npm run setup -- --yes`銆傞渶瑕佹洿鏂板凡鏈夐厤缃椂锛岃鍏堟鏌ュ師閰嶇疆锛屽啀杩愯 `npm run setup -- --replace`銆傞厤缃伐鍏蜂細璇嗗埆鏃х増 `dsh_collab`锛屽苟涓斿彧鍦ㄥ緱鍒拌繖娆℃槑纭殑鏇挎崲鎺堟潈鍚庤縼绉讳负 `dsh_agentlink`銆?
 
-4. 重启 Codex，然后验证连接。
+4. 閲嶅惎 Codex锛岀劧鍚庨獙璇佽繛鎺ャ€?
 
    ```bash
    npm run doctor
    ```
 
-通过 `/mcp` 或 Codex 设置确认 `dsh_agentlink` 已连接。doctor 还会以只读方式报告 `DSH_BRIDGE_HOME` 下的 fail-closed 锁位置，且从不清理它们，因此即使存在锁也能安全运行。需要完全手动编辑 TOML 或查看全部环境变量时，请阅读[手动 Codex MCP 配置](docs/manual-configuration.zh-CN.md)。
+閫氳繃 `/mcp` 鎴?Codex 璁剧疆纭 `dsh_agentlink` 宸茶繛鎺ャ€俤octor 杩樹細浠ュ彧璇绘柟寮忔姤鍛?`DSH_BRIDGE_HOME` 涓嬬殑 fail-closed 閿佷綅缃紝涓斾粠涓嶆竻鐞嗗畠浠紝鍥犳鍗充娇瀛樺湪閿佷篃鑳藉畨鍏ㄨ繍琛屻€傞渶瑕佸畬鍏ㄦ墜鍔ㄧ紪杈?TOML 鎴栨煡鐪嬪叏閮ㄧ幆澧冨彉閲忔椂锛岃闃呰[鎵嬪姩 Codex MCP 閰嶇疆](docs/manual-configuration.zh-CN.md)銆?
 
-当前源码补丁会阻止新的 projection/chunk 洪峰继续扩大 coordination ledger，但不会自动压缩已有的 5 MB 以上 ledger。请保留旧 bridge home 备查；新的委派可以选择独立的 `DSH_BRIDGE_HOME`。对话真源始终是 DSH `session.history`，不是 bridge ledger。保守恢复边界见[已知问题](KNOWN_ISSUES.md)。
+褰撳墠婧愮爜琛ヤ竵浼氶樆姝㈡柊鐨?projection/chunk 娲嘲缁х画鎵╁ぇ coordination ledger锛屼絾涓嶄細鑷姩鍘嬬缉宸叉湁鐨?5 MB 浠ヤ笂 ledger銆傝淇濈暀鏃?bridge home 澶囨煡锛涙柊鐨勫娲惧彲浠ラ€夋嫨鐙珛鐨?`DSH_BRIDGE_HOME`銆傚璇濈湡婧愬缁堟槸 DSH `session.history`锛屼笉鏄?bridge ledger銆備繚瀹堟仮澶嶈竟鐣岃[宸茬煡闂](KNOWN_ISSUES.md)銆?
 
-dsh-Agentlink 是安装在调用方一侧的插件，不是 DSH Cordis bundle；请不要使用 `dsh plugin --profile ... add ...` 安装。
+dsh-Agentlink 鏄畨瑁呭湪璋冪敤鏂逛竴渚х殑鎻掍欢锛屼笉鏄?DSH Cordis bundle锛涜涓嶈浣跨敤 `dsh plugin --profile ... add ...` 瀹夎銆?
 
-## 为什么需要 dsh-Agentlink？
+## 涓轰粈涔堥渶瑕?dsh-Agentlink锛?
 
-### 利用 DSH 的 Harness 能力
+### 鍒╃敤 DSH 鐨?Harness 鑳藉姏
 
-DSH 为复杂任务提供持久 session、工具调用、subagent 和人工监督等能力。dsh-Agentlink 让 Codex 能够与这套独立 harness 讨论并协作，同时不离开你原本的工作入口。
+DSH 涓哄鏉備换鍔℃彁渚涙寔涔?session銆佸伐鍏疯皟鐢ㄣ€乻ubagent 鍜屼汉宸ョ洃鐫ｇ瓑鑳藉姏銆俤sh-Agentlink 璁?Codex 鑳藉涓庤繖濂楃嫭绔?harness 璁ㄨ骞跺崗浣滐紝鍚屾椂涓嶇寮€浣犲師鏈殑宸ヤ綔鍏ュ彛銆?
 
-![Codex 与 DeepSeek Harness 协作](assets/codex-dsh-collaboration.webp)
+![Codex 涓?DeepSeek Harness 鍗忎綔](assets/codex-dsh-collaboration.webp)
 
-*Codex 继续负责规划、讨论和总控，DSH 负责执行 harness、会话与 worker。*
+*Codex 缁х画璐熻矗瑙勫垝銆佽璁哄拰鎬绘帶锛孌SH 璐熻矗鎵ц harness銆佷細璇濅笌 worker銆?
 
-### 不只是再增加一个原生 subagent
+### 涓嶅彧鏄啀澧炲姞涓€涓師鐢?subagent
 
-原生 subagent 仍属于调用方自己的 agent tree。dsh-Agentlink 接入的是一套由用户配置的独立 harness：会话可以在 DSH Web 持续查看，使用 DSH 自己的 worker 与模型路由，并由 Codex 观察、继续或取消。
+鍘熺敓 subagent 浠嶅睘浜庤皟鐢ㄦ柟鑷繁鐨?agent tree銆俤sh-Agentlink 鎺ュ叆鐨勬槸涓€濂楃敱鐢ㄦ埛閰嶇疆鐨勭嫭绔?harness锛氫細璇濆彲浠ュ湪 DSH Web 鎸佺画鏌ョ湅锛屼娇鐢?DSH 鑷繁鐨?worker 涓庢ā鍨嬭矾鐢憋紝骞剁敱 Codex 瑙傚療銆佺户缁垨鍙栨秷銆?
 
-![dsh-Agentlink 与原生 subagent 对比](assets/dsh-vs-native-subagents.webp)
+![dsh-Agentlink 涓庡師鐢?subagent 瀵规瘮](assets/dsh-vs-native-subagents.webp)
 
-*主 agent 专注判断和验收，DSH 使用你配置的模型承担更大规模的执行工作。*
+*涓?agent 涓撴敞鍒ゆ柇鍜岄獙鏀讹紝DSH 浣跨敤浣犻厤缃殑妯″瀷鎵挎媴鏇村ぇ瑙勬ā鐨勬墽琛屽伐浣溿€?
 
-### 省时间、也省成本
+### 鐪佹椂闂淬€佷篃鐪佹垚鏈?
 
-- **省时间。** 把实现、检索、资料提取和长日志整理等执行型任务交给你在 DSH 中配置的高速模型，例如 DeepSeek V4 路由，主 agent 可以继续规划和验收。
-- **省成本。** 把大量执行 token 路由到成本更低的 DeepSeek 模型，可以减少对昂贵主模型的消耗。
+- **鐪佹椂闂淬€?* 鎶婂疄鐜般€佹绱€佽祫鏂欐彁鍙栧拰闀挎棩蹇楁暣鐞嗙瓑鎵ц鍨嬩换鍔′氦缁欎綘鍦?DSH 涓厤缃殑楂橀€熸ā鍨嬶紝渚嬪 DeepSeek V4 璺敱锛屼富 agent 鍙互缁х画瑙勫垝鍜岄獙鏀躲€?
+- **鐪佹垚鏈€?* 鎶婂ぇ閲忔墽琛?token 璺敱鍒版垚鏈洿浣庣殑 DeepSeek 妯″瀷锛屽彲浠ュ噺灏戝鏄傝吹涓绘ā鍨嬬殑娑堣€椼€?
 
-实际速度和费用取决于模型、服务商、部署方式、网络与任务本身。完成安装后，你仍然可以像平常一样使用 Codex，只在适合交给 DSH 执行时直接让它发起委派即可。
+瀹為檯閫熷害鍜岃垂鐢ㄥ彇鍐充簬妯″瀷銆佹湇鍔″晢銆侀儴缃叉柟寮忋€佺綉缁滀笌浠诲姟鏈韩銆傚畬鎴愬畨瑁呭悗锛屼綘浠嶇劧鍙互鍍忓钩甯镐竴鏍蜂娇鐢?Codex锛屽彧鍦ㄩ€傚悎浜ょ粰 DSH 鎵ц鏃剁洿鎺ヨ瀹冨彂璧峰娲惧嵆鍙€?
 
-## 如何使用
+## 濡備綍浣跨敤
 
-启动 `dsh web` 并让 Codex 重新加载 MCP 配置后，直接用自然语言告诉 Codex，例如：
+鍚姩 `dsh web` 骞惰 Codex 閲嶆柊鍔犺浇 MCP 閰嶇疆鍚庯紝鐩存帴鐢ㄨ嚜鐒惰瑷€鍛婅瘔 Codex锛屼緥濡傦細
 
-> 使用 dsh-Agentlink，把当前仓库里的这个实现任务委派给 DSH。保持会话在 DSH Web 可见，向我报告进度，任何 approval 都先询问我。
+> 浣跨敤 dsh-Agentlink锛屾妸褰撳墠浠撳簱閲岀殑杩欎釜瀹炵幇浠诲姟濮旀淳缁?DSH銆備繚鎸佷細璇濆湪 DSH Web 鍙锛屽悜鎴戞姤鍛婅繘搴︼紝浠讳綍 approval 閮藉厛璇㈤棶鎴戙€?
 
-之后 Codex 可以委派任务、观察事件、继续同一会话、与你一起回答 DSH 的问题，或取消任务。打开 `http://127.0.0.1:3080`，即可在 DSH Web 查看并操作同一个 session。
+涔嬪悗 Codex 鍙互濮旀淳浠诲姟銆佽瀵熶簨浠躲€佺户缁悓涓€浼氳瘽銆佷笌浣犱竴璧峰洖绛?DSH 鐨勯棶棰橈紝鎴栧彇娑堜换鍔°€傛墦寮€ `http://127.0.0.1:3080`锛屽嵆鍙湪 DSH Web 鏌ョ湅骞舵搷浣滃悓涓€涓?session銆?
 
-## MCP 工具
+## MCP 宸ュ叿
 
-- `dsh_host_status` — 读取 connect-only Host 状态与 capabilities
-- `dsh_delegate` — 创建 root session 并排队初始 prompt；默认 detached（`waitSeconds=0`）
-- `dsh_followup` — 以显式 `mode="queue"|"steer"` 继续同一个 root session；默认 `queue`
-- `dsh_continue` — `dsh_followup` 的兼容别名
-- `dsh_status` — 返回 availability、execution、lineage、queue、pending interaction、final message 和 cursors
-- `dsh_tail` — 使用 bridge task cursor 读取有界事件摘要
-- `dsh_wait` — 最多等待 30 秒，直到出现 durable event、状态变化、pending interaction 或 terminal 状态
-- `dsh_observe` — `dsh_wait` 的兼容别名；bridge cursor 取代原始 per-session seq cursor
-- `dsh_cancel` — `scope="turn"|"queue"`
-- `dsh_list` — 列出 task mapping，并附带当前派生状态
-- `dsh_answer_question` — 通过 pending question rpcId 提交类型化答案
-- `dsh_resolve_approval` — 对 pending approval rpcId 提交 `allow_once|reject`
-- `dsh_release_workspace` — 显式释放持久化 workspace claim，但不关闭 DSH session
+- `dsh_host_status` 鈥?璇诲彇 connect-only Host 鐘舵€佷笌 capabilities
+- `dsh_delegate` 鈥?鍒涘缓 root session 骞舵帓闃熷垵濮?prompt锛涢粯璁?detached锛坄waitSeconds=0`锛?
+- `dsh_followup` 鈥?浠ユ樉寮?`mode="queue"|"steer"` 缁х画鍚屼竴涓?root session锛涢粯璁?`queue`
+- `dsh_continue` 鈥?`dsh_followup` 鐨勫吋瀹瑰埆鍚?
+- `dsh_status` 鈥?杩斿洖 availability銆乪xecution銆乴ineage銆乹ueue銆乸ending interaction銆乫inal message 鍜?cursors
+- `dsh_tail` 鈥?浣跨敤 bridge task cursor 璇诲彇鏈夌晫浜嬩欢鎽樿
+- `dsh_wait` 鈥?鏈€澶氱瓑寰?30 绉掞紝鐩村埌鍑虹幇 durable event銆佺姸鎬佸彉鍖栥€乸ending interaction 鎴?terminal 鐘舵€?
+- `dsh_observe` 鈥?`dsh_wait` 鐨勫吋瀹瑰埆鍚嶏紱bridge cursor 鍙栦唬鍘熷 per-session seq cursor
+- `dsh_cancel` 鈥?`scope="turn"|"queue"`
+- `dsh_list` 鈥?鍒楀嚭 task mapping锛屽苟闄勫甫褰撳墠娲剧敓鐘舵€?
+- `dsh_answer_question` 鈥?閫氳繃 pending question rpcId 鎻愪氦绫诲瀷鍖栫瓟妗?
+- `dsh_resolve_approval` 鈥?瀵?pending approval rpcId 鎻愪氦 `allow_once|reject`
+- `dsh_release_workspace` 鈥?鏄惧紡閲婃斁鎸佷箙鍖?workspace claim锛屼絾涓嶅叧闂?DSH session
 
-正常委派没有 model 参数。目标模型只在安装或调整 DSH 时配置。每次 delegate 都会读取 `session.models.current` 并信任 Host 返回的 `routable`；bridge 不会修改模型，也不会根据 catalog group 自行推导 routability。
+姝ｅ父濮旀淳娌℃湁 model 鍙傛暟銆傜洰鏍囨ā鍨嬪彧鍦ㄥ畨瑁呮垨璋冩暣 DSH 鏃堕厤缃€傛瘡娆?delegate 閮戒細璇诲彇 `session.models.current` 骞朵俊浠?Host 杩斿洖鐨?`routable`锛沚ridge 涓嶄細淇敼妯″瀷锛屼篃涓嶄細鏍规嵁 catalog group 鑷鎺ㄥ routability銆?
 
-`dsh_wait` 只观察 bridge 的持久化状态。assistant delta/chunk 帧和顶层 `session/projection` snapshot 会被跳过，因此不会 bump task revision，也不会唤醒 waiter；turn 结束后的完整 final message 仍可通过 status/tail 观察。
+`dsh_wait` 鍙瀵?bridge 鐨勬寔涔呭寲鐘舵€併€俛ssistant delta/chunk 甯у拰椤跺眰 `session/projection` snapshot 浼氳璺宠繃锛屽洜姝や笉浼?bump task revision锛屼篃涓嶄細鍞ら啋 waiter锛泃urn 缁撴潫鍚庣殑瀹屾暣 final message 浠嶅彲閫氳繃 status/tail 瑙傚療銆?
 
-## 后续方向
+## 鍚庣画鏂瑰悜
 
-以下内容是计划方向，不代表已经实现或 release 承诺。
+浠ヤ笅鍐呭鏄鍒掓柟鍚戯紝涓嶄唬琛ㄥ凡缁忓疄鐜版垨 release 鎵胯銆?
 
-1. **Claude 与其他入口** — 探索 Claude Code、Claude Desktop MCP、Workbuddy 等调用方接入同一个官方 DSH Web Host。
-2. **Agent 调用与信息传输** — 优化 prompt 组织、上下文打包、输出摘要和压缩策略，同时确保问题、审批、错误和最终答案可靠传输。
-3. **更多集成** — 待 Codex bridge 与兼容性约定稳定后继续扩展。
+1. **Claude 涓庡叾浠栧叆鍙?* 鈥?鎺㈢储 Claude Code銆丆laude Desktop MCP銆乄orkbuddy 绛夎皟鐢ㄦ柟鎺ュ叆鍚屼竴涓畼鏂?DSH Web Host銆?
+2. **Agent 璋冪敤涓庝俊鎭紶杈?* 鈥?浼樺寲 prompt 缁勭粐銆佷笂涓嬫枃鎵撳寘銆佽緭鍑烘憳瑕佸拰鍘嬬缉绛栫暐锛屽悓鏃剁‘淇濋棶棰樸€佸鎵广€侀敊璇拰鏈€缁堢瓟妗堝彲闈犱紶杈撱€?
+3. **鏇村闆嗘垚** 鈥?寰?Codex bridge 涓庡吋瀹规€х害瀹氱ǔ瀹氬悗缁х画鎵╁睍銆?
 
-## 更多文档
+## 鏇村鏂囨。
 
-- [架构与安全模型](docs/architecture.zh-CN.md) — 身份、状态、恢复、审批、取消与工作区协作
-- [验证指南](docs/validation.md) — 兼容性检查与人工验收流程
-- [已知问题](KNOWN_ISSUES.md) — 当前升级与并发运行限制
-- [贡献指南](CONTRIBUTING.md)与[安全说明](SECURITY.md)
+- [鏋舵瀯涓庡畨鍏ㄦā鍨媇(docs/architecture.zh-CN.md) 鈥?韬唤銆佺姸鎬併€佹仮澶嶃€佸鎵广€佸彇娑堜笌宸ヤ綔鍖哄崗浣?
+- [楠岃瘉鎸囧崡](docs/validation.md) 鈥?鍏煎鎬ф鏌ヤ笌浜哄伐楠屾敹娴佺▼
+- [宸茬煡闂](KNOWN_ISSUES.md) 鈥?褰撳墠鍗囩骇涓庡苟鍙戣繍琛岄檺鍒?
+- [璐＄尞鎸囧崡](CONTRIBUTING.md)涓嶽瀹夊叏璇存槑](SECURITY.md)
 
-## 许可证
+## 璁稿彲璇?
 
 [MIT](LICENSE)
 
-Alpha 说明：DSH 仍处于 developer preview，本项目是独立社区项目，不代表 DeepSeek 或 OpenAI 官方背书。`0.1.0-alpha.1` 包含一个共享账本并发问题；修复已进入源码、尚待发布。升级或并发运行 bridge 前请阅读[已知问题](KNOWN_ISSUES.md)。
+Alpha 璇存槑锛欴SH 浠嶅浜?developer preview锛屾湰椤圭洰鏄嫭绔嬬ぞ鍖洪」鐩紝涓嶄唬琛?DeepSeek 鎴?OpenAI 瀹樻柟鑳屼功銆俙0.1.0-alpha.1` 鍖呭惈涓€涓叡浜处鏈苟鍙戦棶棰橈紱淇宸茶繘鍏ユ簮鐮併€佸皻寰呭彂甯冦€傚崌绾ф垨骞跺彂杩愯 bridge 鍓嶈闃呰[宸茬煡闂](KNOWN_ISSUES.md)銆?
+
+---
+
+## ZCode 閫傞厤鐗堬紙浜屽紑璇存槑锛?
+> **鏈粨搴撴槸 [hootandy321/dsh-Agentlink](https://github.com/hootandy321/dsh-Agentlink) 鐨勪簩娆″紑鍙戠増鏈€?*
+> 鍘熺増闈㈠悜 Codex锛屾湰浠撳簱鍦ㄦ鍩虹涓婇澶栭€傞厤浜?**ZCode** 鎻掍欢浣撶郴锛屼娇鍏跺彲浠ュ湪 ZCode 鐜涓棤缂濅娇鐢ㄣ€?>
+> 鏈粨搴撶殑 `main` 鍒嗘敮濮嬬粓涓庝笂娓镐繚鎸佸悓姝ワ紝褰撳師浣滆€呮洿鏂版椂浼氳嚜鍔ㄥ悎骞躲€?
+### 鎴戜滑鏂板鐨勫唴瀹?
+| 璺緞 | 璇存槑 |
+|------|------|
+| `.zcode-plugin/plugin.json` | ZCode 鎻掍欢 manifest锛屽惈 MCP 鏈嶅姟鍣ㄩ厤缃€佺敤鎴峰彲閰嶇疆鐨?Host URL 鍜?agent preset |
+| `skills/dsh-collab/SKILL.md` | ZCode 涓撶敤鍗忎綔鎶€鑳斤紝鍚畬鏁村伐鍏疯皟鐢ㄦ寚鍗椼€佸伐浣滄祦鍜屽畨鍏ㄨ鍒?|
+| `scripts/install.ps1` | ZCode 涓€閿畨瑁呰剼鏈紝鑷姩妫€娴嬬幆澧冨苟鍐欏叆 ZCode 閰嶇疆 |
+| `.github/workflows/sync-upstream.yml` | 鑷姩鍚屾涓婃父鏇存柊鐨勫伐浣滄祦锛堟瘡 6 灏忔椂妫€鏌ヤ竴娆★級 |
+
+### 鑷姩鍚屾鏈哄埗
+
+鏈粨搴撻厤缃簡 GitHub Action锛?- **姣?6 灏忔椂**鑷姩妫€鏌ヤ笂娓?`hootandy321/dsh-Agentlink` 鏄惁鏈夋柊鎻愪氦
+- 鏈夋柊鏇存柊鏃?*鑷姩鍚堝苟**鍒版湰浠撳簱 `main` 鍒嗘敮
+- 鍚堝苟鍐茬獊鏃朵細鍦?Actions 鏃ュ織涓憡璀︼紝闇€鎵嬪姩瑙ｅ喅
+- 鎴戜滑鐨?ZCode 閫傞厤鏂囦欢锛坄.zcode-plugin/`銆乣skills/`銆乣scripts/`锛夊缁堜繚鐣欙紝涓嶅彈涓婃父褰卞搷
+
+鎵嬪姩鍚屾鍛戒护锛?```bash
+git fetch upstream main
+git merge upstream/main --no-edit
+npm run build
+```
+
+### 涓庡師鐗堢殑鍏崇郴
+
+| 椤圭洰 | 閾炬帴 |
+|------|------|
+| 鍘熺増锛圕odex锛?| https://github.com/hootandy321/dsh-Agentlink |
+| **鏈粨搴擄紙ZCode 閫傞厤锛?* | https://github.com/yyz0313/dsh-Agentlink |
+
+涓ゆ潯鍒嗘敮骞惰缁存姢锛屽姛鑳藉畬鍏ㄥ吋瀹广€傛湰浠撳簱鐨勬彁浜ゅ彧娑夊強 ZCode 閫傞厤鍜屽姛鑳芥€у寮猴紙濡?`sessionId` 鍙傛暟锛夛紝涓嶄細淇敼涓婃父鍘熸湁閫昏緫銆?
+
