@@ -128,6 +128,7 @@ DSH 为复杂任务提供持久 session、工具调用、subagent 和人工监�
 ## 更多文档
 
 - [架构与安全模型](docs/architecture.zh-CN.md) — 身份、状态、恢复、审批、取消与工作区协作
+- [多调用方扩展架构](docs/caller-integration-architecture.zh-CN.md) — Codex、Claude Code 与后续调用方共享 Runtime 和 Integration Pack 边界
 - [验证指南](docs/validation.md) — 兼容性检查与人工验收流程
 - [已知问题](KNOWN_ISSUES.md) — 当前升级与并发运行限制
 - [贡献指南](CONTRIBUTING.md)与[安全说明](SECURITY.md)

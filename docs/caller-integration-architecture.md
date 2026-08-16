@@ -1,7 +1,7 @@
 # Multi-caller extension architecture for dsh-Agentlink
 
 Status: Proposed
-The Chinese document is authoritative; this English version should remain semantically aligned with it.
+This English document is authoritative; the Chinese version should remain semantically aligned with it.
 
 ## 1. Decision summary
 
@@ -297,7 +297,7 @@ Compatibility records distinguish at least these axes:
 |---|---|---|
 | Agentlink version | `0.1.x` | Product and tool-schema version |
 | Tested DSH Host version | `0.1.0-rc.6` | Host API and event behavior |
-| MCP / SDK generation | Sessionful SDK or later stateless specification | Transport and capability negotiation |
+| MCP / SDK generation | `@modelcontextprotocol/sdk` declared as `^1.17.5`, lockfile currently resolves `1.30.0`; sessionful SDK or later stateless specification | Transport and capability negotiation |
 | Tested caller version | A specific Codex or Claude Code version | Configuration format and permission behavior |
 | Caller capabilities | stdio, config scopes, human approval, instruction installation | Determines what an integration may enable |
 
@@ -309,7 +309,7 @@ Package versions do not substitute for wire compatibility. MCP is moving from th
 
 - Submit only this design document.
 - Do not create Claude Code implementation files or change the shared tool schema.
-- Discuss and confirm the boundaries in a Draft PR.
+- Discuss and confirm the boundaries in the architecture PR before implementation starts.
 
 ### Phase 1: extract the shared setup boundary
 
@@ -330,6 +330,7 @@ Package versions do not substitute for wire compatibility. MCP is moving from th
 ### Phase 3: a second new caller
 
 - Validate the contract with ZCode, Workbuddy, or another MCP host.
+- Existing community ZCode work, such as `yyz0313`'s `plugin.json` and `SKILL.md` experiment, can be resubmitted upstream as an Integration Pack under this contract once the host behavior is verified.
 - Add capability fields only for demonstrated differences; do not design a dynamic plugin system from hypothetical requirements.
 
 ### Phase 4: optional protocol or topology expansion

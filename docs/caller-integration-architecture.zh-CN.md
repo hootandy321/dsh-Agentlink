@@ -1,7 +1,7 @@
 # dsh-Agentlink 多调用方扩展架构
 
 状态：提案（Proposed）
-本文件是中文主文档；英文版应与本文件保持语义一致。
+英文版是权威主文档；本中文版应与英文版保持语义一致。
 
 ## 1. 决策摘要
 
@@ -297,7 +297,7 @@ Gateway 负责 Agentlink 的连接与协调状态，不负责启动、停止或�
 |---|---|---|
 | Agentlink 版本 | `0.1.x` | 产品与工具 schema 版本 |
 | DSH Host 已测试版本 | `0.1.0-rc.6` | Host API 与事件行为 |
-| MCP / SDK 时代 | sessionful SDK 或后续无状态规范 | transport 与能力协商 |
+| MCP / SDK 时代 | `@modelcontextprotocol/sdk` 声明为 `^1.17.5`，lockfile 当前解析为 `1.30.0`；sessionful SDK 或后续无状态规范 | transport 与能力协商 |
 | Caller 已测试版本 | Codex/Claude Code 的具体版本 | 安装格式与权限行为 |
 | Caller capabilities | stdio、配置作用域、人工审批、指令安装 | 决定 integration 能启用什么 |
 
@@ -309,7 +309,7 @@ Gateway 负责 Agentlink 的连接与协调状态，不负责启动、停止或�
 
 - 只提交本设计文档。
 - 不创建 Claude Code 实现文件、不调整公共工具 schema。
-- 通过 Draft PR 讨论并确认边界。
+- 在架构 PR 中讨论并确认边界，再开始实现。
 
 ### Phase 1：抽取共享安装边界
 
@@ -330,6 +330,7 @@ Gateway 负责 Agentlink 的连接与协调状态，不负责启动、停止或�
 ### Phase 3：第二个新增调用方
 
 - 用 ZCode、Workbuddy 或另一 MCP 宿主验证契约是否足够。
+- 社区已有的 ZCode 工作，例如 `yyz0313` 的 `plugin.json` 与 `SKILL.md` 试验，可在宿主行为验证后按本契约整理为 Integration Pack 并重新提交上游。
 - 只有真实差异才扩展能力字段，避免根据想象设计动态插件系统。
 
 ### Phase 4：可选协议或拓扑扩展
