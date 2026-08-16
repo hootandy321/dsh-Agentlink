@@ -1,23 +1,47 @@
 #!/usr/bin/env node
 
-import { randomUUID } from "node:crypto";
-import { constants as fsConstants } from "node:fs";
-import { chmod, copyFile, lstat, mkdir, open, readFile, realpath, rename, unlink } from "node:fs/promises";
-import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { realpath } from "node:fs/promises";
+import { resolve } from "node:path";
 import { stdin, stdout } from "node:process";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import {
+  CODEX_LEGACY_SERVER_NAMES,
+  CODEX_RESTART_HINT,
+  CODEX_SERVER_NAME,
+  codexIntegration,
+  extractBridgeConfig,
+  hasBridgeConfig,
+  renderCodexOperation,
+  upsertMcpConfig,
+} from "./codex-integration.js";
+import type { InstallPlan, UpsertMcpServerOperation } from "./caller-integration.js";
 import { loadConfig } from "./config.js";
 import { DshClient } from "./dsh-client.js";
 import { probeDshCliVersion, runDoctor } from "./doctor.js";
+import { atomicInstallText, readConfigSnapshot } from "./setup-engine.js";
+import type { ConfigSnapshot } from "./setup-engine.js";
 
-const SERVER_NAME = "dsh_agentlink";
-const LEGACY_SERVER_NAMES = ["dsh_collab"] as const;
-const BRIDGE_SERVER_NAMES = [SERVER_NAME, ...LEGACY_SERVER_NAMES] as const;
 const DEFAULT_HOST_URL = "http://127.0.0.1:3080";
 const DEFAULT_PRESET = "code";
+
+export {
+  CODEX_LEGACY_SERVER_NAMES as LEGACY_SERVER_NAMES,
+  CODEX_SERVER_NAME as SERVER_NAME,
+  codexIntegration,
+  createCodexInstallPlan,
+  defaultCodexConfigPath,
+  extractBridgeConfig,
+  hasBridgeConfig,
+  renderCodexOperation,
+  renderMcpConfig,
+  upsertMcpConfig,
+  verifyCodexMcpConfig,
+} from "./codex-integration.js";
+export { readConfigSnapshot } from "./setup-engine.js";
+export type { ConfigSnapshot } from "./setup-engine.js";
+export type { RenderMcpConfigOptions } from "./codex-integration.js";
 
 export interface SetupOptions {
   yes: boolean;
@@ -29,14 +53,6 @@ export interface SetupOptions {
   host?: string;
   preset?: string;
   configPath?: string;
-}
-
-export interface RenderMcpConfigOptions {
-  entryPath: string;
-  nodePath: string;
-  hostUrl: string;
-  dshVersion?: string;
-  preset?: string;
 }
 
 function valueAfter(argv: string[], index: number, option: string): string {
@@ -84,175 +100,6 @@ export function parseSetupArgs(argv: string[]): SetupOptions {
   return options;
 }
 
-function tomlString(value: string): string {
-  return JSON.stringify(value);
-}
-
-export function renderMcpConfig(options: RenderMcpConfigOptions): string {
-  const env = [`DSH_HOST_URL = ${tomlString(options.hostUrl)}`];
-  if (options.dshVersion !== undefined) env.push(`DSH_HOST_VERSION = ${tomlString(options.dshVersion)}`);
-  if (options.preset !== undefined) env.push(`DSH_BRIDGE_AGENT_PRESET = ${tomlString(options.preset)}`);
-
-  return [
-    `[mcp_servers.${SERVER_NAME}]`,
-    `command = ${tomlString(options.nodePath)}`,
-    `args = [${tomlString(options.entryPath)}]`,
-    "",
-    `[mcp_servers.${SERVER_NAME}.env]`,
-    ...env,
-    "",
-    `[mcp_servers.${SERVER_NAME}.tools.dsh_resolve_approval]`,
-    `approval_mode = "prompt"`,
-  ].join("\n");
-}
-
-function tableName(line: string): string | undefined {
-  const match = /^\s*\[([^\[\]]+)]\s*(?:#.*)?$/.exec(line);
-  return match?.[1]?.replace(/\s+/g, "");
-}
-
-function isBridgeTable(name: string): boolean {
-  return BRIDGE_SERVER_NAMES.some(
-    (serverName) =>
-      name === `mcp_servers.${serverName}` ||
-      name.startsWith(`mcp_servers.${serverName}.`) ||
-      name === `mcp_servers."${serverName}"` ||
-      name.startsWith(`mcp_servers."${serverName}".`),
-  );
-}
-
-export function hasBridgeConfig(config: string): boolean {
-  return config.split(/\r?\n/).some((line) => {
-    const name = tableName(line);
-    return name !== undefined && isBridgeTable(name);
-  });
-}
-
-export function extractBridgeConfig(config: string): string | undefined {
-  const collected: string[] = [];
-  let collecting = false;
-  let found = false;
-  for (const line of config.split(/\r?\n/)) {
-    const name = tableName(line);
-    if (name !== undefined) collecting = isBridgeTable(name);
-    if (collecting) {
-      found = true;
-      collected.push(line);
-    }
-  }
-  return found ? collected.join("\n").trim() : undefined;
-}
-
-function rejectUnsupportedInlineConfig(config: string): void {
-  if (config.includes('"""') || config.includes("'''")) {
-    throw new Error(
-      "Codex config contains a multiline TOML string; setup will not edit it automatically. Use the manual configuration guide.",
-    );
-  }
-  const serverNamePattern = `(?:${BRIDGE_SERVER_NAMES.flatMap((name) => [name, `"${name}"`]).join("|")})`;
-  const dottedAssignment = new RegExp(`^\\s*mcp_servers\\s*\\.\\s*${serverNamePattern}\\s*\\.`, "m");
-  if (dottedAssignment.test(config)) {
-    throw new Error(
-      "found an inline/dotted dsh-Agentlink MCP configuration; remove or convert it to table form before running setup",
-    );
-  }
-
-  const lines = config.split(/\r?\n/);
-  let inMcpServersTable = false;
-  for (const line of lines) {
-    const name = tableName(line);
-    if (name !== undefined && BRIDGE_SERVER_NAMES.some((serverName) => name.includes(serverName)) && !isBridgeTable(name)) {
-      throw new Error(
-        "found a non-standard dsh-Agentlink table; setup will not guess how to rewrite it. Use the manual configuration guide.",
-      );
-    }
-    if (name !== undefined) inMcpServersTable = name === "mcp_servers";
-    else if (inMcpServersTable && new RegExp(`^\\s*${serverNamePattern}\\s*=`).test(line)) {
-      throw new Error(
-        "found an inline dsh-Agentlink value under [mcp_servers]; remove or convert it to table form before running setup",
-      );
-    }
-  }
-}
-
-export function upsertMcpConfig(config: string, bridgeBlock: string, replace: boolean): string {
-  rejectUnsupportedInlineConfig(config);
-  const exists = hasBridgeConfig(config);
-  if (exists && !replace) {
-    throw new Error(
-      `Codex MCP server ${SERVER_NAME} or legacy ${LEGACY_SERVER_NAMES.join(", ")} already exists; rerun with --replace after reviewing it`,
-    );
-  }
-
-  const kept: string[] = [];
-  let omit = false;
-  for (const line of config.split(/\r?\n/)) {
-    const name = tableName(line);
-    if (name !== undefined) omit = isBridgeTable(name);
-    if (!omit) kept.push(line);
-  }
-
-  const prefix = kept.join("\n").trimEnd();
-  return `${prefix === "" ? "" : `${prefix}\n\n`}${bridgeBlock.trim()}\n`;
-}
-
-export function defaultCodexConfigPath(env: NodeJS.ProcessEnv = process.env): string {
-  const configuredRoot = env.CODEX_HOME?.trim();
-  return join(configuredRoot === undefined || configuredRoot === "" ? join(homedir(), ".codex") : resolve(configuredRoot), "config.toml");
-}
-
-export interface ConfigSnapshot {
-  content: string;
-  exists: boolean;
-  mode: number;
-}
-
-export async function readConfigSnapshot(path: string): Promise<ConfigSnapshot> {
-  try {
-    const details = await lstat(path);
-    if (details.isSymbolicLink()) {
-      throw new Error(`refusing to replace symlinked Codex config: ${path}`);
-    }
-    if (!details.isFile()) throw new Error(`Codex config is not a regular file: ${path}`);
-    return { content: await readFile(path, "utf8"), exists: true, mode: details.mode & 0o777 };
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { content: "", exists: false, mode: 0o600 };
-    throw error;
-  }
-}
-
-async function backupConfig(path: string, snapshot: ConfigSnapshot): Promise<string | undefined> {
-  if (!snapshot.exists) return undefined;
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const backupPath = `${path}.bak-dsh-agentlink-${timestamp}-${process.pid}-${randomUUID()}`;
-  await copyFile(path, backupPath, fsConstants.COPYFILE_EXCL);
-  await chmod(backupPath, snapshot.mode);
-  return backupPath;
-}
-
-async function atomicWrite(path: string, content: string, expected: ConfigSnapshot): Promise<void> {
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  const temporaryPath = join(dirname(path), `.config.toml.dsh-agentlink-${process.pid}-${Date.now()}.tmp`);
-  let handle: Awaited<ReturnType<typeof open>> | undefined;
-  try {
-    handle = await open(temporaryPath, "wx", expected.mode);
-    await handle.writeFile(content, { encoding: "utf8" });
-    await handle.sync();
-    await handle.close();
-    handle = undefined;
-    await chmod(temporaryPath, expected.mode);
-
-    const latest = await readConfigSnapshot(path);
-    if (latest.exists !== expected.exists || latest.content !== expected.content || latest.mode !== expected.mode) {
-      throw new Error("Codex config changed during setup; no replacement was made. Rerun setup after reviewing it.");
-    }
-    await rename(temporaryPath, path);
-  } finally {
-    await handle?.close().catch(() => undefined);
-    await unlink(temporaryPath).catch(() => undefined);
-  }
-}
-
 export interface InstallMcpConfigResult {
   changed: boolean;
   backupPath?: string;
@@ -264,19 +111,43 @@ export async function installMcpConfigFile(
   replace: boolean,
   expected?: ConfigSnapshot,
 ): Promise<InstallMcpConfigResult> {
-  const snapshot = await readConfigSnapshot(path);
-  if (
-    expected !== undefined &&
-    (snapshot.exists !== expected.exists || snapshot.content !== expected.content || snapshot.mode !== expected.mode)
-  ) {
-    throw new Error("Codex config changed during setup; no replacement was made. Rerun setup after reviewing it.");
-  }
+  const snapshot = expected ?? (await readConfigSnapshot(path));
   if (extractBridgeConfig(snapshot.content) === bridgeBlock.trim()) return { changed: false };
 
   const updated = upsertMcpConfig(snapshot.content, bridgeBlock, replace);
-  const backupPath = await backupConfig(path, snapshot);
-  await atomicWrite(path, updated, snapshot);
-  return { changed: true, ...(backupPath === undefined ? {} : { backupPath }) };
+  const result = await atomicInstallText({
+    path,
+    content: updated,
+    expected: snapshot,
+    backupLabel: "dsh-agentlink",
+    tempLabel: "dsh-agentlink",
+    verify: (content) => extractBridgeConfig(content) === bridgeBlock.trim(),
+  });
+  return result;
+}
+
+function firstCodexOperation(plan: InstallPlan): UpsertMcpServerOperation {
+  const operation = plan.operations[0];
+  if (operation?.kind !== "upsert-mcp-server") throw new Error("Codex install plan is missing an MCP server operation");
+  return operation;
+}
+
+export async function installCodexPlan(plan: InstallPlan, expected?: ConfigSnapshot): Promise<InstallMcpConfigResult> {
+  const operation = firstCodexOperation(plan);
+  const bridgeBlock = renderCodexOperation(operation);
+  const snapshot = expected ?? (await readConfigSnapshot(plan.target.path));
+  if (extractBridgeConfig(snapshot.content) === bridgeBlock.trim()) return { changed: false };
+
+  const updated = upsertMcpConfig(snapshot.content, bridgeBlock, operation.replace);
+  const result = await atomicInstallText({
+    path: plan.target.path,
+    content: updated,
+    expected: snapshot,
+    backupLabel: "dsh-agentlink",
+    tempLabel: "dsh-agentlink",
+    verify: (content) => codexIntegration.verifyInstalled(content, operation),
+  });
+  return result;
 }
 
 function normalizeHostUrl(raw: string): string {
@@ -322,7 +193,7 @@ Options:
   --host <url>       DSH Web Host origin (default: ${DEFAULT_HOST_URL})
   --preset <name>    DSH agent preset (default: ${DEFAULT_PRESET})
   --no-preset        Follow DSH's own default preset
-  --replace          Replace an existing ${SERVER_NAME} configuration
+  --replace          Replace an existing ${CODEX_SERVER_NAME} configuration
   --config <path>    Write a specific Codex config file
   --dry-run          Print the generated block without writing
   --skip-doctor      Skip the read-only DSH Host check
@@ -354,21 +225,25 @@ async function main(): Promise<void> {
     ? undefined
     : options.preset ?? (options.yes ? DEFAULT_PRESET : await askWithDefault("DSH agent preset (`-` uses DSH default)", DEFAULT_PRESET));
   const preset = normalizePreset(rawPreset);
-  const configPath = resolve(options.configPath ?? defaultCodexConfigPath());
+  const configPath = resolve(options.configPath ?? codexIntegration.defaultConfigPath({ cwd: process.cwd(), env: process.env }));
   const entryPath = await realpath(fileURLToPath(new URL("./index.js", import.meta.url)));
 
-  const bridgeBlock = renderMcpConfig({
+  let plan = codexIntegration.createInstallPlan({
+    configPath,
     entryPath,
     nodePath: process.execPath,
     hostUrl,
     dshVersion,
+    replace: options.replace,
     ...(preset === undefined ? {} : { preset }),
   });
+  let operation = firstCodexOperation(plan);
+  let bridgeBlock = renderCodexOperation(operation);
 
   const snapshot = await readConfigSnapshot(configPath);
   const existing = snapshot.content;
   if (extractBridgeConfig(existing) === bridgeBlock.trim()) {
-    console.log(`${SERVER_NAME} already matches this setup. No changes made.`);
+    console.log(`${CODEX_SERVER_NAME} already matches this setup. No changes made.`);
     return;
   }
 
@@ -376,31 +251,44 @@ async function main(): Promise<void> {
   if (hasBridgeConfig(existing) && !replace) {
     if (options.yes) {
       throw new Error(
-        `${SERVER_NAME} or legacy ${LEGACY_SERVER_NAMES.join(", ")} already exists; inspect it and rerun with --replace to update it`,
+        `${CODEX_SERVER_NAME} or legacy ${CODEX_LEGACY_SERVER_NAMES.join(", ")} already exists; inspect it and rerun with --replace to update it`,
       );
     }
     replace = await askYesNo(
-      `Replace the existing ${SERVER_NAME} or legacy ${LEGACY_SERVER_NAMES.join(", ")} configuration?`,
+      `Replace the existing ${CODEX_SERVER_NAME} or legacy ${CODEX_LEGACY_SERVER_NAMES.join(", ")} configuration?`,
     );
     if (!replace) {
       console.log("No changes made.");
       return;
     }
   }
+  if (operation.replace !== replace) {
+    plan = codexIntegration.createInstallPlan({
+      configPath,
+      entryPath,
+      nodePath: process.execPath,
+      hostUrl,
+      dshVersion,
+      replace,
+      ...(preset === undefined ? {} : { preset }),
+    });
+    operation = firstCodexOperation(plan);
+    bridgeBlock = renderCodexOperation(operation);
+  }
 
   if (options.dryRun) {
     upsertMcpConfig(existing, bridgeBlock, replace);
-    console.log(`# Would update ${configPath}\n\n${bridgeBlock}`);
+    console.log(`# Would update ${plan.target.path}\n\n${bridgeBlock}`);
     return;
   }
 
-  const installation = await installMcpConfigFile(configPath, bridgeBlock, replace, snapshot);
+  const installation = await installCodexPlan(plan, snapshot);
   if (!installation.changed) {
-    console.log(`${SERVER_NAME} already matches this setup. No changes made.`);
+    console.log(`${CODEX_SERVER_NAME} already matches this setup. No changes made.`);
     return;
   }
 
-  console.log(`Configured ${SERVER_NAME} in ${configPath}`);
+  console.log(`Configured ${CODEX_SERVER_NAME} in ${configPath}`);
   if (installation.backupPath !== undefined) console.log(`Backup: ${installation.backupPath}`);
   console.log(`DSH CLI: ${dshVersion}`);
   console.log(`DSH Host: ${hostUrl}`);
@@ -419,7 +307,7 @@ async function main(): Promise<void> {
     else console.log(`Host check: not connected; start it with ${report.startCommand}`);
   }
 
-  console.log("Restart Codex to load dsh-Agentlink. Configure the desired model in DSH; delegation will use that live route.");
+  console.log(CODEX_RESTART_HINT);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {

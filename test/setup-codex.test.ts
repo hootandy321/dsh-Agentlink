@@ -5,14 +5,18 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import {
+  codexIntegration,
+  createCodexInstallPlan,
   defaultCodexConfigPath,
   extractBridgeConfig,
   hasBridgeConfig,
   installMcpConfigFile,
   parseSetupArgs,
   readConfigSnapshot,
+  renderCodexOperation,
   renderMcpConfig,
   upsertMcpConfig,
+  verifyCodexMcpConfig,
 } from "../src/setup-codex.js";
 
 const block = renderMcpConfig({
@@ -34,6 +38,61 @@ test("setup renders one safe stdio MCP block with human-gated approval", () => {
   assert.equal(block.includes("tool_timeout_sec"), false);
 });
 
+test("setup exposes a caller integration install plan without original config content", () => {
+  const secret = "existing-secret-value";
+  const existingConfig = `model = "private"\ntoken = "${secret}"\n`;
+  const plan = createCodexInstallPlan({
+    configPath: "/tmp/codex/config.toml",
+    nodePath: "/usr/local/bin/node",
+    entryPath: "/tmp/dsh-Agentlink/dist/index.js",
+    hostUrl: "http://127.0.0.1:3080",
+    dshVersion: "0.1.0-rc.7",
+    preset: "code",
+    replace: true,
+  });
+  const operation = plan.operations[0];
+  assert.equal(operation?.kind, "upsert-mcp-server");
+  const rendered = renderCodexOperation(operation);
+  const serialized = JSON.stringify(plan);
+
+  assert.equal(plan.callerId, "codex");
+  assert.equal(plan.callerName, "Codex");
+  assert.deepEqual(plan.capabilities, {
+    mcpStdio: true,
+    configScopes: ["user", "explicit-file"],
+    instructionInstall: "manual",
+    humanApprovalPrompt: "supported",
+    legacyMigration: true,
+    restartRequired: true,
+  });
+  assert.deepEqual(plan.target, {
+    path: "/tmp/codex/config.toml",
+    format: "toml",
+    scope: "explicit-file",
+  });
+  assert.equal(plan.targetDescription, "Codex MCP TOML config file");
+  assert.deepEqual(plan.verification, [{ kind: "mcp-server-block-matches", serverName: "dsh_agentlink" }]);
+  assert.equal(plan.warnings.some((warning) => warning.includes("Restart Codex")), true);
+  assert.equal(operation.serverName, "dsh_agentlink");
+  assert.deepEqual(operation.legacyServerNames, ["dsh_collab"]);
+  assert.equal(operation.command, "/usr/local/bin/node");
+  assert.deepEqual(operation.args, ["/tmp/dsh-Agentlink/dist/index.js"]);
+  assert.deepEqual(operation.env, {
+    DSH_HOST_URL: "http://127.0.0.1:3080",
+    DSH_HOST_VERSION: "0.1.0-rc.7",
+    DSH_BRIDGE_AGENT_PRESET: "code",
+  });
+  assert.deepEqual(operation.humanApproval, { toolName: "dsh_resolve_approval", mode: "human-prompt" });
+  assert.match(plan.restartHint, /Restart Codex/);
+  assert.match(rendered, /\[mcp_servers\.dsh_agentlink]/);
+  assert.match(rendered, /approval_mode = "prompt"/);
+  assert.equal(verifyCodexMcpConfig(`${existingConfig}\n${rendered}\n`, operation), true);
+  assert.equal(serialized.includes(secret), false);
+  assert.equal(serialized.includes('model = "private"'), false);
+  assert.equal(serialized.includes("content"), false);
+  assert.equal(serialized.includes("renderedBlock"), false);
+});
+
 test("setup adds the bridge without changing unrelated Codex configuration", () => {
   const original = `model = "gpt-test"\n\n[mcp_servers.other]\ncommand = "other"\n`;
   const updated = upsertMcpConfig(original, block, false);
@@ -42,6 +101,22 @@ test("setup adds the bridge without changing unrelated Codex configuration", () 
   assert.match(updated, /\[mcp_servers\.other]\ncommand = "other"/);
   assert.equal(extractBridgeConfig(updated), block);
   assert.equal(hasBridgeConfig(updated), true);
+});
+
+test("setup preserves unrelated TOML array tables", () => {
+  const original = `[[profiles]]\nname = "test"\n`;
+  const updated = upsertMcpConfig(original, block, false);
+
+  assert.match(updated, /^\[\[profiles]]\nname = "test"/);
+  assert.equal(extractBridgeConfig(updated), block);
+});
+
+test("setup preserves unrelated array tables after the bridge during replacement", () => {
+  const original = `${block}\n\n[[profiles]]\nname = "after-bridge"\n`;
+  const updated = upsertMcpConfig(original, block, true);
+
+  assert.equal(extractBridgeConfig(updated), block);
+  assert.match(updated, /\[\[profiles]]\nname = "after-bridge"/);
 });
 
 test("setup requires explicit replacement and removes only dsh_agentlink tables", () => {
@@ -89,6 +164,10 @@ test("setup recognizes quoted target tables but refuses ambiguous TOML forms", (
     () => upsertMcpConfig('notes = """\n[mcp_servers.dsh_collab]\n"""\n', block, true),
     /multiline TOML string/,
   );
+  assert.throws(
+    () => upsertMcpConfig('[[mcp_servers.dsh_agentlink]]\ncommand = "node"\n', block, true),
+    /array-table/,
+  );
 });
 
 test("setup flags parse non-interactive and replacement choices", () => {
@@ -120,6 +199,10 @@ test("setup flags parse non-interactive and replacement choices", () => {
 
 test("setup resolves the Codex config root without repurposing the environment", () => {
   assert.equal(defaultCodexConfigPath({ CODEX_HOME: "/tmp/custom-codex" }), "/tmp/custom-codex/config.toml");
+  assert.equal(
+    codexIntegration.defaultConfigPath({ cwd: "/tmp/project", env: { CODEX_HOME: "/tmp/custom-codex" } }),
+    "/tmp/custom-codex/config.toml",
+  );
 });
 
 test("setup backs up an existing config and preserves private file modes", async (context) => {
