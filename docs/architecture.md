@@ -6,9 +6,9 @@ This document contains the bridge semantics that are intentionally kept out of t
 
 ## Positioning and Host lifecycle
 
-dsh-Agentlink is a caller-side bridge, not a DSH Cordis bundle. Codex starts it as a local STDIO MCP server; the bridge connects to an independently running official DSH Web Host.
+dsh-Agentlink is a caller-side bridge, not a DSH Cordis bundle. A supported caller such as Codex or Claude Code starts it as a local STDIO MCP server; the bridge connects to an independently running official DSH Web Host.
 
-The bridge is connect-only. It does not start, daemonize, stop, or own `dsh web`, and it has no Host pidfile or port lock. The user or an OS service owns the Host lifecycle. This keeps DSH sessions visible through the official Web UI after an individual Codex MCP process exits.
+The bridge is connect-only. It does not start, daemonize, stop, or own `dsh web`, and it has no Host pidfile or port lock. The user or an OS service owns the Host lifecycle. This keeps DSH sessions visible through the official Web UI after an individual caller's MCP process exits.
 
 ## Identity and state model
 
@@ -101,11 +101,11 @@ The unary rpcId generated for each bridge prompt is retained as coordination met
 
 ## Workspace coordination
 
-`dsh_delegate` resolves the requested cwd through `realpath` and acquires a persistent workspace claim. The default is `exclusive-write`; `read-only` permits overlapping read-only tasks, while any overlapping ancestor or descendant exclusive claim conflicts. Claims are shared across bridge processes using the same bridge home and remain after `turn/end`, because a person can continue the session later from DSH Web.
+`dsh_delegate` resolves the requested cwd through `realpath` and acquires a persistent workspace claim. The default is `exclusive-write`; `read-only` permits overlapping bridge-local read-only claims, while any overlapping ancestor or descendant exclusive claim conflicts. Claims are shared across bridge processes using the same bridge home and remain after `turn/end`, because a person can continue the session later from DSH Web. This is cooperative coordination only: `workspaceMode` does not select, enforce, or verify the DSH Host filesystem sandbox, and `agentPreset` names DSH agent composition rather than a workspace or permission policy. Tool responses expose `workspaceClaimSemantics.controlsDshSandbox=false` so callers can present this boundary without parsing prose.
 
 Release a claim only with `dsh_release_workspace`. Release does not close or cancel the DSH session. Follow-up, question answers, and `allow_once` require the task's claim to remain active; safety cancellation and approval rejection stay available without it.
 
-The claim is cooperative. It prevents conflicting delegations seen by this bridge store, but cannot stop DSH Web, another bridge home, Codex, a shell, or an editor from writing files. The supervising Codex process must not edit an exclusively claimed cwd. A dedicated git worktree per writable delegation is the recommended strong isolation boundary.
+The claim is cooperative. It prevents conflicting delegations seen by this bridge store, but cannot stop DSH Web, another bridge home, the caller, a shell, or an editor from writing files. A supervising caller must not edit an exclusively claimed cwd. A dedicated git worktree per writable delegation is the recommended strong isolation boundary.
 
 If claim acquisition races after DSH session creation, the bridge returns a conflict identifying the unprompted session/task mapping; it does not silently run without a claim.
 
@@ -120,8 +120,8 @@ If claim acquisition races after DSH session creation, the bridge returns a conf
 - Queue state is unknown after mux connect or reconnect until rc.6 emits an actual `session/queue` snapshot. The bridge does not infer an empty queue from `session/subscribed`.
 - Ordinary user-created session forks are not folded into a BridgeTask; session-backed subagent descendants are.
 - Host-origin affinity is configuration-scoped rather than stored in the strict task mapping. Do not reuse one `DSH_BRIDGE_HOME` after changing `DSH_HOST_URL`; per-task cross-Host migration is unsupported.
-- Workspace claims do not provide OS-level exclusion, and fresh write preflight cannot eliminate a Web-client time-of-check/time-of-use race. Full simultaneous multi-Codex plus interactive-Web conflict freedom is not claimed.
-- Exactly-once delivery, atomic queue clear, `events.mux.since` resume, argument-dependent Codex approval policy, automatic background-job cancellation, and Host-package detection through `host.describe.version` are unsupported.
+- Workspace claims do not provide OS-level exclusion, and fresh write preflight cannot eliminate a Web-client time-of-check/time-of-use race. Full simultaneous multi-caller plus interactive-Web conflict freedom is not claimed.
+- Exactly-once delivery, atomic queue clear, `events.mux.since` resume, argument-dependent caller approval policy, automatic background-job cancellation, and Host-package detection through `host.describe.version` are unsupported.
 - Real browser-visible end-to-end interaction is an operator acceptance step, not part of `npm test`. Follow the [validation guide](validation.md) after changing DSH, the model route, the agent preset, or bridge transport behavior.
 
 See [Known issues](../KNOWN_ISSUES.md) for current source-preview defects and operational workarounds.

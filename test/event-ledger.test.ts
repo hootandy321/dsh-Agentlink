@@ -384,6 +384,29 @@ test("EventLedger structurally deduplicates concurrent queue and jobs snapshots 
   }
 });
 
+test("EventLedger deduplicates live queue fan-out by Host rpcId within one session", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-dsh-ledger-snapshot-rpc-"));
+  try {
+    const ledgers = Array.from({ length: 7 }, () => new EventLedger(home));
+    const queued = [{ id: "queued-1", placement: "queued" }];
+
+    for (const ledger of ledgers) {
+      await appendQueue(ledger, "root", "queue-rpc-a", queued);
+      await appendQueue(ledger, "root", "queue-rpc-b", []);
+    }
+
+    assert.equal((await new EventLedger(home).snapshot(taskId)).cursor, 2);
+
+    const restarted = new EventLedger(home);
+    assert.equal(await appendQueue(restarted, "root", "queue-rpc-a", queued), undefined);
+    const otherSession = await appendQueue(restarted, "child", "queue-rpc-a", queued);
+    assert.equal(otherSession?.cursor, 3, "the same rpcId in a different session must remain independent");
+    assert.equal((await restarted.snapshot(taskId)).cursor, 3);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
 test("EventLedger snapshot dedupe is last-wins, session/type scoped, and survives restart", async () => {
   const home = await mkdtemp(join(tmpdir(), "codex-dsh-ledger-snapshots-"));
   try {

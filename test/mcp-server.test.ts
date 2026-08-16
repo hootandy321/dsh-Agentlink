@@ -71,6 +71,10 @@ test("MCP server registers the full typed surface and rejects a delegate model a
     const approval = tools.tools.find((tool) => tool.name === "dsh_resolve_approval");
     assert.equal(approval?.annotations?.destructiveHint, true);
     assert.equal(approval?.annotations?.idempotentHint, false);
+    assert.deepEqual(approval?._meta, { "anthropic/requiresUserInteraction": true });
+    const delegateTool = tools.tools.find((tool) => tool.name === "dsh_delegate");
+    assert.match(delegateTool?.description ?? "", /bridge-local cooperative claim/);
+    assert.match(JSON.stringify(delegateTool?.inputSchema), /not a DSH Host filesystem sandbox selector/);
 
     const invalidDelegate = await client.callTool({
         name: "dsh_delegate",
@@ -90,6 +94,14 @@ test("MCP server registers the full typed surface and rejects a delegate model a
     assert.deepEqual(parseToolText(question), {
       requestId: "question-1",
       answers: [{ id: "q1", selected: ["yes"] }],
+    });
+
+    const status = await client.callTool({ name: "dsh_status", arguments: { taskId: task.taskId } });
+    assert.deepEqual(parseToolText(status).workspaceClaimSemantics, {
+      enforcement: "bridge-cooperative-only",
+      controlsDshSandbox: false,
+      description:
+        "workspaceMode is a bridge-local coordination claim shared only by bridge processes using the same bridge home; it does not select, enforce, or verify the DSH Host filesystem sandbox.",
     });
 
     const approvalResult = await client.callTool({

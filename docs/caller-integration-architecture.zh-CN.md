@@ -307,11 +307,15 @@ Gateway 负责 Agentlink 的连接与协调状态，不负责启动、停止或�
 
 ### Phase 0：架构提案
 
+**状态：已由 PR #6 完成。**
+
 - 只提交本设计文档。
 - 不创建 Claude Code 实现文件、不调整公共工具 schema。
 - 在架构 PR 中讨论并确认边界，再开始实现。
 
 ### Phase 1：抽取共享安装边界
+
+**状态：已由 PR #7 实现。**
 
 - 从 `setup-codex.ts` 提取最小 Setup Engine 和 `CallerIntegration` 契约。
 - Codex 变成第一个内置 integration，但用户行为和生成配置保持不变。
@@ -321,6 +325,8 @@ Gateway 负责 Agentlink 的连接与协调状态，不负责启动、停止或�
 
 ### Phase 2：Claude Code Integration Pack
 
+**状态：已由 PR #7 实现。**
+
 - 使用与 Codex 相同的 MCP Runtime。
 - 按 Claude Code 官方支持面检测配置位置和作用域。
 - 生成声明式安装计划；共享引擎安全执行。
@@ -329,11 +335,15 @@ Gateway 负责 Agentlink 的连接与协调状态，不负责启动、停止或�
 
 ### Phase 3：第二个新增调用方
 
+**状态：适配中，以 ZCode 作为下一个验证目标。**
+
 - 用 ZCode、Workbuddy 或另一 MCP 宿主验证契约是否足够。
 - 社区已有的 ZCode 工作，例如 `yyz0313` 的 `plugin.json` 与 `SKILL.md` 试验，可在宿主行为验证后按本契约整理为 Integration Pack 并重新提交上游。
 - 只有真实差异才扩展能力字段，避免根据想象设计动态插件系统。
 
 ### Phase 4：可选协议或拓扑扩展
+
+**状态：已延期。**
 
 - 需要一级外部 Agent 体验时评估 ACP frontend。
 - 满足第 11.2 节触发条件时评估显式 Gateway。
@@ -341,7 +351,7 @@ Gateway 负责 Agentlink 的连接与协调状态，不负责启动、停止或�
 
 ## 14. Claude Code 第一阶段验收范围
 
-本节描述下一实现 PR 的边界，不在架构 PR 中落代码。
+本节记录 PR #7 已实现的验收边界，并继续作为 Claude Code Integration Pack 的维护基线。
 
 - 能检测 Claude Code 是否可用，并明确所选配置作用域/目标。
 - 能以相同 `dsh-agentlink` stdio Runtime 注册 MCP server。
