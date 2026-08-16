@@ -11,6 +11,7 @@ import {
   extractBridgeConfig,
   hasBridgeConfig,
   installMcpConfigFile,
+  installCodexPlan,
   parseSetupArgs,
   readConfigSnapshot,
   renderCodexOperation,
@@ -168,6 +169,52 @@ test("setup recognizes quoted target tables but refuses ambiguous TOML forms", (
     () => upsertMcpConfig('[[mcp_servers.dsh_agentlink]]\ncommand = "node"\n', block, true),
     /array-table/,
   );
+});
+
+test("setup rejects root-level inline bridge definitions before append and verification", () => {
+  const operation = createCodexInstallPlan({
+    configPath: "/tmp/codex/config.toml",
+    nodePath: "/Applications/Node Runtime/bin/node",
+    entryPath: "/tmp/dsh Agentlink/dist/index.js",
+    hostUrl: "http://127.0.0.1:3080",
+    dshVersion: "0.1.0-rc.6",
+    preset: "code",
+    replace: false,
+  }).operations[0];
+  assert.equal(operation?.kind, "upsert-mcp-server");
+
+  for (const config of [
+    'mcp_servers.dsh_agentlink = { command = "old" }\n',
+    'mcp_servers."dsh_agentlink" = { command = "old" }\n',
+    'mcp_servers.dsh_collab = { command = "legacy" }\n',
+    'mcp_servers."dsh_collab" = { command = "legacy" }\n',
+  ]) {
+    assert.throws(() => upsertMcpConfig(config, block, false), /inline\/dotted/);
+    assert.throws(() => upsertMcpConfig(config, block, true), /inline\/dotted/);
+    assert.equal(verifyCodexMcpConfig(`${config}${block}\n`, operation), false);
+  }
+});
+
+test("setup does not report inline duplicates plus a matching table as an installed no-op", async (context) => {
+  const directory = await mkdtemp(join(tmpdir(), "dsh-agentlink-inline-noop-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const configPath = join(directory, "config.toml");
+  const invalid = `mcp_servers.dsh_agentlink = { command = "old" }\n\n${block}\n`;
+  await writeFile(configPath, invalid, { mode: 0o600 });
+  const expected = await readConfigSnapshot(configPath);
+  const plan = createCodexInstallPlan({
+    configPath,
+    nodePath: "/Applications/Node Runtime/bin/node",
+    entryPath: "/tmp/dsh Agentlink/dist/index.js",
+    hostUrl: "http://127.0.0.1:3080",
+    dshVersion: "0.1.0-rc.6",
+    preset: "code",
+    replace: false,
+  });
+
+  await assert.rejects(() => installMcpConfigFile(configPath, block, false, expected), /inline\/dotted/);
+  await assert.rejects(() => installCodexPlan(plan, expected), /inline\/dotted/);
+  assert.equal(await readFile(configPath, "utf8"), invalid);
 });
 
 test("setup flags parse non-interactive and replacement choices", () => {

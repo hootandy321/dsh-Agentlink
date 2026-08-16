@@ -115,8 +115,8 @@ function rejectUnsupportedInlineConfig(config: string): void {
     );
   }
   const serverNamePattern = `(?:${CODEX_BRIDGE_SERVER_NAMES.flatMap((name) => [name, `"${name}"`]).join("|")})`;
-  const dottedAssignment = new RegExp(`^\\s*mcp_servers\\s*\\.\\s*${serverNamePattern}\\s*\\.`, "m");
-  if (dottedAssignment.test(config)) {
+  const inlineOrDottedAssignment = new RegExp(`^\\s*mcp_servers\\s*\\.\\s*${serverNamePattern}\\s*(?:\\.|=)`, "m");
+  if (inlineOrDottedAssignment.test(config)) {
     throw new Error(
       "found an inline/dotted dsh-Agentlink MCP configuration; remove or convert it to table form before running setup",
     );
@@ -230,14 +230,18 @@ export function createCodexInstallPlan(options: CodexInstallPlanOptions): Instal
   };
 }
 
-export function verifyCodexMcpConfig(content: string, operation: UpsertMcpServerOperation): boolean {
+export function verifyCodexMcpBlock(content: string, bridgeBlock: string): boolean {
   try {
     rejectUnsupportedInlineConfig(content);
     assertBasicTomlTableSyntax(content);
   } catch {
     return false;
   }
-  return extractBridgeConfig(content) === renderCodexOperation(operation).trim();
+  return extractBridgeConfig(content) === bridgeBlock.trim();
+}
+
+export function verifyCodexMcpConfig(content: string, operation: UpsertMcpServerOperation): boolean {
+  return verifyCodexMcpBlock(content, renderCodexOperation(operation));
 }
 
 export const codexIntegration: CallerIntegration<CodexInstallPlanOptions> = {

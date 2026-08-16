@@ -15,6 +15,7 @@ import {
   hasBridgeConfig,
   renderCodexOperation,
   upsertMcpConfig,
+  verifyCodexMcpBlock,
 } from "./codex-integration.js";
 import type { InstallPlan, UpsertMcpServerOperation } from "./caller-integration.js";
 import { loadConfig } from "./config.js";
@@ -112,7 +113,7 @@ export async function installMcpConfigFile(
   expected?: ConfigSnapshot,
 ): Promise<InstallMcpConfigResult> {
   const snapshot = expected ?? (await readConfigSnapshot(path));
-  if (extractBridgeConfig(snapshot.content) === bridgeBlock.trim()) return { changed: false };
+  if (verifyCodexMcpBlock(snapshot.content, bridgeBlock)) return { changed: false };
 
   const updated = upsertMcpConfig(snapshot.content, bridgeBlock, replace);
   const result = await atomicInstallText({
@@ -121,7 +122,7 @@ export async function installMcpConfigFile(
     expected: snapshot,
     backupLabel: "dsh-agentlink",
     tempLabel: "dsh-agentlink",
-    verify: (content) => extractBridgeConfig(content) === bridgeBlock.trim(),
+    verify: (content) => verifyCodexMcpBlock(content, bridgeBlock),
   });
   return result;
 }
@@ -136,7 +137,7 @@ export async function installCodexPlan(plan: InstallPlan, expected?: ConfigSnaps
   const operation = firstCodexOperation(plan);
   const bridgeBlock = renderCodexOperation(operation);
   const snapshot = expected ?? (await readConfigSnapshot(plan.target.path));
-  if (extractBridgeConfig(snapshot.content) === bridgeBlock.trim()) return { changed: false };
+  if (codexIntegration.verifyInstalled(snapshot.content, operation)) return { changed: false };
 
   const updated = upsertMcpConfig(snapshot.content, bridgeBlock, operation.replace);
   const result = await atomicInstallText({
@@ -242,7 +243,7 @@ async function main(): Promise<void> {
 
   const snapshot = await readConfigSnapshot(configPath);
   const existing = snapshot.content;
-  if (extractBridgeConfig(existing) === bridgeBlock.trim()) {
+  if (codexIntegration.verifyInstalled(existing, operation)) {
     console.log(`${CODEX_SERVER_NAME} already matches this setup. No changes made.`);
     return;
   }
