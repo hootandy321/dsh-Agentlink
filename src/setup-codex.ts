@@ -293,7 +293,7 @@ async function main(): Promise<void> {
   if (installation.backupPath !== undefined) console.log(`Backup: ${installation.backupPath}`);
   console.log(`DSH CLI: ${dshVersion}`);
   console.log(`DSH Host: ${hostUrl}`);
-  console.log(`DSH preset: ${preset ?? "Host default"}`);
+  console.log(`DSH agent preset (composition; not sandbox): ${preset ?? "Host default"}`);
   console.log("Approval policy: prompt (allow_once remains human-gated)");
 
   if (!options.skipDoctor) {

@@ -34,7 +34,7 @@ Record, without credentials or session content:
 ## Browser-visible acceptance
 
 1. Open the same DSH Web Host used by the bridge.
-2. Delegate a read-only task in a disposable workspace and keep its task/session identifiers private.
+2. Delegate a task with `workspaceMode="read-only"` in a disposable workspace and keep its task/session identifiers private. Confirm the response reports `workspaceClaimSemantics.controlsDshSandbox=false`; this is a bridge-local claim, not a DSH sandbox assertion.
 3. Confirm that the root session appears in DSH Web.
 4. Confirm that `dsh_wait` and cursor-based `dsh_tail` observe progress without dropping or duplicating the terminal event.
 5. Confirm that `dsh_status` reaches `turn_completed` and returns the final message from live DSH history.

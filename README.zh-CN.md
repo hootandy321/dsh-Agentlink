@@ -6,7 +6,19 @@
 
 [English](README.md) | **简体中文**
 
-dsh-Agentlink 是一个让你直接在原本的 AI 工作工具里调用 DeepSeek Harness（DSH）协作的插件。你的主 agent 可以把实现、调研、调试和长日志整理等任务交给 DSH，再在原有工作流中观察、继续或取消对应会话。当前支持 Codex 与 Claude Code，后续计划持续适配 Workbuddy 等主流 AI coding 与 agent 工具。
+dsh-Agentlink 是一个让你直接在原本的 AI 工作工具里调用 DeepSeek Harness（DSH）协作的插件。你的主 agent 可以把实现、调研、调试和长日志整理等任务交给 DSH，再在原有工作流中观察、继续或取消对应会话。当前支持 Codex 与 Claude Code，ZCode 正在适配，OpenCode、Workbuddy 等主流 AI coding 与 agent 工具待后续接入。
+
+## 调用方支持情况
+
+| 调用方 | 状态 | 安装方式或可用性 |
+|---|---|---|
+| Codex | ✅ 已支持 | `npm run setup` |
+| Claude Code | ✅ 已支持 | `npm run setup:claude -- --project /项目的绝对路径` |
+| ZCode | 🚧 适配中 | 正在验证适配方式与打包形式 |
+| OpenCode | ⏳ 待适配 | 尚不可用 |
+| Workbuddy | ⏳ 待适配 | 尚不可用 |
+
+目前只有标记为**已支持**的调用方在本仓库中提供可用安装路径。“适配中”和“待适配”是当前方向，不代表发布承诺。
 
 ## 安装
 
@@ -21,7 +33,7 @@ dsh-Agentlink 是一个让你直接在原本的 AI 工作工具里调用 DeepSee
 先检查 Node.js 22+、DSH CLI 和我的 DSH Web Host，在我确认的目录中 clone；
 运行 npm install 和 npm test。Codex 使用 npm run setup -- --yes；Claude Code 使用
 npm run setup:claude -- --yes --project /项目的绝对路径。
-Claude Code 的 skill 需要先审查再安装，不要静默覆盖项目中已有的 skill。
+Claude Code 会安装项目 MCP 入口和随仓库提供的项目 skill；只有在审查已有文件后再使用 --replace 和 --replace-skill。
 如果已经存在 dsh_agentlink 或旧版 dsh_collab 配置，先向我展示冲突，再决定是否使用 --replace。
 不要替我启动或停止 dsh web，完成后告诉我何时需要重载调用方并完成 project MCP trust。
 ```
@@ -68,9 +80,9 @@ Claude Code 的 skill 需要先审查再安装，不要静默覆盖项目中已�
    claude mcp get dsh_agentlink
    ```
 
-   Claude 向导只修改该项目的 `.mcp.json`，保留无关 server，并分别报告 MCP 注册、project trust、Claude 审批能力和 DSH Host 可达性。在该项目中打开 Claude Code，通过 `/mcp` 审批 pending server；bridge 会把 `dsh_resolve_approval` 标记为必须人工交互。向导不会覆盖 Claude skill；请先审查仓库中的 `skill/claude-code-dsh/SKILL.md`，再手动安装到目标项目的 `.claude/skills/claude-code-dsh/SKILL.md`。
+   Claude 向导只修改该项目的 `.mcp.json` 和 `.claude/skills/claude-code-dsh/SKILL.md`，保留无关 server，并分别报告 MCP 注册、project trust、Claude skill 状态、Claude 审批能力、DSH permission/sandbox 归属和 DSH Host 可达性。在该项目中打开 Claude Code，通过 `/mcp` 审批 pending server；bridge 会把 `dsh_resolve_approval` 标记为必须人工交互。
 
-   无交互使用默认值时增加 `--yes`。需要更新已有配置时，请先检查原配置，再增加 `--replace`。两个配置工具都会识别旧版 `dsh_collab`，并且只在得到这次明确的替换授权后迁移为 `dsh_agentlink`。它们不会启动 DSH，也不会替你重启调用方。
+   无交互使用默认值时增加 `--yes`。需要更新已有 MCP entry 时，请先检查原配置，再增加 `--replace`；需要更新已有 Claude project skill 时，请先审查后增加 `--replace-skill`；如果要自己管理 skill，则增加 `--no-skill`。两个配置工具都会识别旧版 `dsh_collab`，并且只在得到这次明确的替换授权后迁移为 `dsh_agentlink`。它们不会启动 DSH、不会改变 DSH permission/sandbox 设置，也不会替你重启调用方。
 
 doctor 会以只读方式报告 `DSH_BRIDGE_HOME` 下的 fail-closed 锁位置，且从不清理它们，因此即使存在锁也能安全运行。
 
@@ -82,7 +94,7 @@ dsh-Agentlink 是安装在调用方一侧的插件，不是 DSH Cordis bundle；
 
 ### 利用 DSH 的 Harness 能力
 
-DSH 为复杂任务提供持久 session、工具调用、subagent 和人工监督等能力。dsh-Agentlink 让 Codex 能够与这套独立 harness 讨论并协作，同时不离开你原本的工作入口。
+DSH 为复杂任务提供持久 session、工具调用、subagent 和人工监督等能力。dsh-Agentlink 让你的主调用方（当前为 Codex 或 Claude Code）能够与这套独立 harness 讨论并协作，同时不离开原本的工作入口。
 
 ![Codex 与 DeepSeek Harness 协作](assets/codex-dsh-collaboration.webp)
 
@@ -90,7 +102,7 @@ DSH 为复杂任务提供持久 session、工具调用、subagent 和人工监�
 
 ### 不只是再增加一个原生 subagent
 
-原生 subagent 仍属于调用方自己的 agent tree。dsh-Agentlink 接入的是一套由用户配置的独立 harness：会话可以在 DSH Web 持续查看，使用 DSH 自己的 worker 与模型路由，并由 Codex 观察、继续或取消。
+原生 subagent 仍属于调用方自己的 agent tree。dsh-Agentlink 接入的是一套由用户配置的独立 harness：会话可以在 DSH Web 持续查看，使用 DSH 自己的 worker 与模型路由，并由主调用方观察、继续或取消。
 
 ![dsh-Agentlink 与原生 subagent 对比](assets/dsh-vs-native-subagents.webp)
 
@@ -114,10 +126,10 @@ DSH 为复杂任务提供持久 session、工具调用、subagent 和人工监�
 ## MCP 工具
 
 - `dsh_host_status` — 读取 connect-only Host 状态与 capabilities
-- `dsh_delegate` — 创建 root session 并排队初始 prompt；默认 detached（`waitSeconds=0`）
+- `dsh_delegate` — 创建 root session 并排队初始 prompt；默认 detached（`waitSeconds=0`）；`workspaceMode` 是 bridge-local claim，不是 DSH sandbox selector
 - `dsh_followup` — 以显式 `mode="queue"|"steer"` 继续同一个 root session；默认 `queue`
 - `dsh_continue` — `dsh_followup` 的兼容别名
-- `dsh_status` — 返回 availability、execution、lineage、queue、pending interaction、final message 和 cursors
+- `dsh_status` — 返回 availability、execution、lineage、queue、pending interaction、final message、cursors 和 workspace claim semantics
 - `dsh_tail` — 使用 bridge task cursor 读取有界事件摘要
 - `dsh_wait` — 最多等待 30 秒，直到出现 durable event、状态变化、pending interaction 或 terminal 状态
 - `dsh_observe` — `dsh_wait` 的兼容别名；bridge cursor 取代原始 per-session seq cursor
@@ -135,9 +147,9 @@ DSH 为复杂任务提供持久 session、工具调用、subagent 和人工监�
 
 以下内容是计划方向，不代表已经实现或 release 承诺。
 
-1. **更多调用方入口** — 通过共享 Integration Pack 架构接入 ZCode、Workbuddy、Claude Desktop MCP 等调用方。
+1. **更多调用方入口** — 完成 ZCode 支持，再通过共享 Integration Pack 架构接入 OpenCode、Workbuddy、Claude Desktop MCP 等调用方。
 2. **Agent 调用与信息传输** — 优化 prompt 组织、上下文打包、输出摘要和压缩策略，同时确保问题、审批、错误和最终答案可靠传输。
-3. **更多集成** — 待 Codex bridge 与兼容性约定稳定后继续扩展。
+3. **更多集成** — 待共享 Runtime 与调用方兼容性约定稳定后继续扩展。
 
 ## 更多文档
 

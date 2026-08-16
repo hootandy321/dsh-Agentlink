@@ -1,6 +1,13 @@
 import { isAbsolute, join } from "node:path";
 
-import type { CallerCapabilities, CallerIntegration, InstallPlan, UpsertMcpServerOperation } from "./caller-integration.js";
+import type {
+  CallerCapabilities,
+  CallerIntegration,
+  InstallInstructionsOperation,
+  InstallPlan,
+  InstallOperation,
+  UpsertMcpServerOperation,
+} from "./caller-integration.js";
 
 export const CLAUDE_CODE_CALLER_ID = "claude-code";
 export const CLAUDE_CODE_SERVER_NAME = "dsh_agentlink";
@@ -12,7 +19,7 @@ export const CLAUDE_CODE_RESTART_HINT =
 const CLAUDE_CODE_CAPABILITIES: CallerCapabilities = {
   mcpStdio: true,
   configScopes: ["project"],
-  instructionInstall: "manual",
+  instructionInstall: "native",
   humanApprovalPrompt: "supported",
   legacyMigration: true,
   restartRequired: true,
@@ -26,6 +33,10 @@ export interface ClaudeCodeInstallPlanOptions {
   dshVersion?: string;
   preset?: string;
   replace: boolean;
+  installSkill?: boolean;
+  replaceSkill?: boolean;
+  skillSourcePath?: string;
+  skillContent?: string;
 }
 
 interface ClaudeCodeMcpServerConfig {
@@ -110,6 +121,15 @@ function assertClaudeCodeOperation(operation: UpsertMcpServerOperation): void {
   assertAbsolutePath(operation.args[0] as string, "Claude Code MCP entry path");
 }
 
+function assertClaudeCodeSkillOperation(operation: InstallInstructionsOperation): void {
+  assertAbsolutePath(operation.sourcePath, "Claude Code skill source path");
+  assertAbsolutePath(operation.targetPath, "Claude Code skill target path");
+  assertNonEmptyString(operation.content, "Claude Code skill content");
+  if (operation.conflictPolicy !== "fail" && operation.conflictPolicy !== "replace-explicitly") {
+    throw new Error("Claude Code skill conflict policy must be fail or replace-explicitly.");
+  }
+}
+
 export function defaultClaudeCodeConfigPath(cwd: string): string {
   assertAbsolutePath(cwd, "Claude Code project directory");
   return join(cwd, ".mcp.json");
@@ -135,6 +155,21 @@ export function createClaudeCodeInstallPlan(options: ClaudeCodeInstallPlanOption
   const operation = createClaudeCodeOperation(options);
   assertClaudeCodeOperation(operation);
   const targetPath = defaultClaudeCodeConfigPath(options.cwd);
+  const operations: InstallOperation[] = [operation];
+  if (options.installSkill === true) {
+    if (options.skillSourcePath === undefined || options.skillContent === undefined) {
+      throw new Error("Claude Code skill installation requires skillSourcePath and skillContent.");
+    }
+    const skillOperation: InstallInstructionsOperation = {
+      kind: "install-instructions",
+      sourcePath: options.skillSourcePath,
+      targetPath: join(options.cwd, ".claude", "skills", "claude-code-dsh", "SKILL.md"),
+      content: options.skillContent,
+      conflictPolicy: options.replaceSkill === true ? "replace-explicitly" : "fail",
+    };
+    assertClaudeCodeSkillOperation(skillOperation);
+    operations.push(skillOperation);
+  }
   return {
     callerId: CLAUDE_CODE_CALLER_ID,
     callerName: "Claude Code",
@@ -145,7 +180,7 @@ export function createClaudeCodeInstallPlan(options: ClaudeCodeInstallPlanOption
       scope: "project",
     },
     targetDescription: "Claude Code project .mcp.json file",
-    operations: [operation],
+    operations,
     verification: [{ kind: "mcp-server-block-matches", serverName: CLAUDE_CODE_SERVER_NAME }],
     warnings: [
       `Existing ${CLAUDE_CODE_SERVER_NAME} or legacy ${CLAUDE_CODE_LEGACY_SERVER_NAMES.join(", ")} entries require explicit replacement approval unless the canonical entry is already equivalent.`,

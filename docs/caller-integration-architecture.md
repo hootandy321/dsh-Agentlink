@@ -307,11 +307,15 @@ Package versions do not substitute for wire compatibility. MCP is moving from th
 
 ### Phase 0: architecture proposal
 
+**Status: completed in PR #6.**
+
 - Submit only this design document.
 - Do not create Claude Code implementation files or change the shared tool schema.
 - Discuss and confirm the boundaries in the architecture PR before implementation starts.
 
 ### Phase 1: extract the shared setup boundary
+
+**Status: implemented in PR #7.**
 
 - Extract the smallest useful Setup Engine and `CallerIntegration` contract from `setup-codex.ts`.
 - Make Codex the first built-in integration while preserving its existing user behavior and generated configuration.
@@ -321,6 +325,8 @@ Package versions do not substitute for wire compatibility. MCP is moving from th
 
 ### Phase 2: Claude Code Integration Pack
 
+**Status: implemented in PR #7.**
+
 - Use the same MCP Runtime as Codex.
 - Detect configuration locations and scopes supported by the verified Claude Code version.
 - Produce a declarative install plan and let the shared engine execute it safely.
@@ -329,11 +335,15 @@ Package versions do not substitute for wire compatibility. MCP is moving from th
 
 ### Phase 3: a second new caller
 
+**Status: in progress with ZCode as the next validation target.**
+
 - Validate the contract with ZCode, Workbuddy, or another MCP host.
 - Existing community ZCode work, such as `yyz0313`'s `plugin.json` and `SKILL.md` experiment, can be resubmitted upstream as an Integration Pack under this contract once the host behavior is verified.
 - Add capability fields only for demonstrated differences; do not design a dynamic plugin system from hypothetical requirements.
 
 ### Phase 4: optional protocol or topology expansion
+
+**Status: deferred.**
 
 - Evaluate an ACP frontend when a first-class external-agent experience is required.
 - Evaluate an explicit Gateway when the triggers in section 11.2 are met.
@@ -341,7 +351,7 @@ Package versions do not substitute for wire compatibility. MCP is moving from th
 
 ## 14. Claude Code phase-1 acceptance scope
 
-This section defines the boundary for the next implementation PR; it does not add implementation to the architecture PR.
+This section records the acceptance boundary implemented by PR #7 and remains the maintenance baseline for the Claude Code Integration Pack.
 
 - Detect whether Claude Code is available and identify the selected configuration scope and target.
 - Register the same `dsh-agentlink` stdio Runtime.

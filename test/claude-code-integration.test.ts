@@ -46,7 +46,7 @@ test("Claude Code integration exposes project-scoped install plan without origin
   assert.deepEqual(plan.capabilities, {
     mcpStdio: true,
     configScopes: ["project"],
-    instructionInstall: "manual",
+    instructionInstall: "native",
     humanApprovalPrompt: "supported",
     legacyMigration: true,
     restartRequired: true,
@@ -75,6 +75,53 @@ test("Claude Code integration exposes project-scoped install plan without origin
   assert.equal(serialized.includes("existingConfig"), false);
   assert.equal(serialized.includes("renderedBlock"), false);
   assert.equal(serialized.includes("content"), false);
+});
+
+test("Claude Code integration can include a native project skill operation", () => {
+  const defaultPlan = createClaudeCodeInstallPlan({
+    cwd: "/tmp/project",
+    nodePath: "/usr/local/bin/node",
+    entryPath: "/tmp/dsh-Agentlink/dist/mcp-server.js",
+    hostUrl: "http://127.0.0.1:3080",
+    replace: false,
+    installSkill: true,
+    skillSourcePath: "/tmp/dsh-Agentlink/skill/claude-code-dsh/SKILL.md",
+    skillContent: "---\nname: claude-code-dsh\n---\n",
+  });
+  const plan = createClaudeCodeInstallPlan({
+    cwd: "/tmp/project",
+    nodePath: "/usr/local/bin/node",
+    entryPath: "/tmp/dsh-Agentlink/dist/mcp-server.js",
+    hostUrl: "http://127.0.0.1:3080",
+    replace: false,
+    installSkill: true,
+    replaceSkill: true,
+    skillSourcePath: "/tmp/dsh-Agentlink/skill/claude-code-dsh/SKILL.md",
+    skillContent: "---\nname: claude-code-dsh\n---\n",
+  });
+  const defaultSkill = defaultPlan.operations.find((operation) => operation.kind === "install-instructions");
+  const skill = plan.operations.find((operation) => operation.kind === "install-instructions");
+
+  assert.equal(defaultSkill?.conflictPolicy, "fail");
+  assert.deepEqual(skill, {
+    kind: "install-instructions",
+    sourcePath: "/tmp/dsh-Agentlink/skill/claude-code-dsh/SKILL.md",
+    targetPath: "/tmp/project/.claude/skills/claude-code-dsh/SKILL.md",
+    content: "---\nname: claude-code-dsh\n---\n",
+    conflictPolicy: "replace-explicitly",
+  });
+  assert.throws(
+    () =>
+      createClaudeCodeInstallPlan({
+        cwd: "/tmp/project",
+        nodePath: "/usr/local/bin/node",
+        entryPath: "/tmp/dsh-Agentlink/dist/mcp-server.js",
+        hostUrl: "http://127.0.0.1:3080",
+        replace: false,
+        installSkill: true,
+      }),
+    /requires skillSourcePath and skillContent/,
+  );
 });
 
 test("Claude Code render produces stdio JSON shape and handles paths with spaces", () => {

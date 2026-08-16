@@ -18,6 +18,7 @@ test("public docs and skill preserve connect-only, approval, cancellation, and r
     "connect-only",
     "approval_mode = \"prompt\"",
     "dsh_release_workspace",
+    "workspace claim semantics",
     "not a DSH Cordis bundle",
     "Do not install it with `dsh plugin --profile ... add ...`",
   ]) {
@@ -45,7 +46,8 @@ test("public docs and skill preserve connect-only, approval, cancellation, and r
     "only source of truth for conversation content",
     "inter-process locks",
     "dsh_release_workspace",
-    "Full simultaneous multi-Codex plus interactive-Web conflict freedom is not claimed",
+    "Full simultaneous multi-caller plus interactive-Web conflict freedom is not claimed",
+    "workspaceClaimSemantics.controlsDshSandbox=false",
     "Real browser-visible end-to-end interaction",
   ]) {
     assert.equal(
@@ -78,6 +80,7 @@ test("public docs and skill preserve connect-only, approval, cancellation, and r
       "unrecoverable_gap",
       "terminal_missing_final",
       "workspace claim is cooperative",
+      "workspaceClaimSemantics.controlsDshSandbox=false",
       "Never auto-allow",
       "Never auto-approve",
     ]) {

@@ -42,7 +42,15 @@ export interface UpsertMcpServerOperation {
   replace: boolean;
 }
 
-export type InstallOperation = UpsertMcpServerOperation;
+export interface InstallInstructionsOperation {
+  kind: "install-instructions";
+  sourcePath: string;
+  targetPath: string;
+  content: string;
+  conflictPolicy: "fail" | "replace-explicitly";
+}
+
+export type InstallOperation = UpsertMcpServerOperation | InstallInstructionsOperation;
 
 export interface VerificationDescriptor {
   kind: "mcp-server-block-matches";

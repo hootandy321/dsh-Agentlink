@@ -82,15 +82,22 @@ export function createMcpServer(service: BridgeService): McpServer {
     "dsh_delegate",
     {
       description:
-        "Create a root session on the configured official DSH Web Host and queue the initial prompt. Uses DSH's configured model; no model argument is accepted. Detached by default.",
+        "Create a root session on the configured official DSH Web Host and queue the initial prompt. Uses DSH's configured model; no model argument is accepted. Detached by default. workspaceMode is only a bridge-local cooperative claim and does not select or verify the DSH sandbox.",
       inputSchema: z
         .object({
           prompt: z.string().min(1),
           cwd: z.string().min(1).describe("Existing absolute directory visible to the DSH Host."),
-          agentPreset: z.string().min(1).optional(),
+          agentPreset: z
+            .string()
+            .min(1)
+            .optional()
+            .describe("DSH agent composition/preset name. This does not express workspace ownership or verified sandbox policy."),
           title: z.string().min(1).optional(),
           waitSeconds: z.number().int().min(0).max(30).default(0),
-          workspaceMode: z.enum(["read-only", "exclusive-write"]).default("exclusive-write"),
+          workspaceMode: z
+            .enum(["read-only", "exclusive-write"])
+            .default("exclusive-write")
+            .describe("Bridge-local cooperative workspace claim only; it is not a DSH Host filesystem sandbox selector or verifier."),
         })
         .strict(),
       annotations: writeOnce,
@@ -136,7 +143,7 @@ export function createMcpServer(service: BridgeService): McpServer {
     "dsh_status",
     {
       description:
-        "Return separate availability/execution state, root and descendant sessions, queue depths, pending interactions, final message, and bridge cursor/watermarks.",
+        "Return separate availability/execution state, root and descendant sessions, queue depths, pending interactions, final message, bridge cursor/watermarks, and bridge-local workspace claim semantics.",
       inputSchema: z.object({ taskId: taskIdSchema }).strict(),
       annotations: readOnly,
     },
@@ -217,7 +224,7 @@ export function createMcpServer(service: BridgeService): McpServer {
   server.registerTool(
     "dsh_list",
     {
-      description: "List bridge task mappings enriched with current derived DSH status when the Host is reachable.",
+      description: "List bridge task mappings enriched with current derived DSH status and bridge-local workspace claim semantics when the Host is reachable.",
       inputSchema: z.object({}).strict(),
       annotations: readOnly,
     },

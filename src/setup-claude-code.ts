@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 import { execFile } from "node:child_process";
-import { realpath, stat } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { lstat, readFile, realpath, stat } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import { stdin, stdout } from "node:process";
 import { createInterface } from "node:readline/promises";
 import { promisify } from "node:util";
@@ -17,7 +17,7 @@ import {
   upsertClaudeCodeMcpConfig,
   verifyClaudeCodeMcpConfig,
 } from "./claude-code-integration.js";
-import type { InstallPlan, UpsertMcpServerOperation } from "./caller-integration.js";
+import type { InstallInstructionsOperation, InstallPlan, UpsertMcpServerOperation } from "./caller-integration.js";
 import { loadConfig } from "./config.js";
 import { DshClient } from "./dsh-client.js";
 import { probeDshCliVersion, runDoctor } from "./doctor.js";
@@ -28,6 +28,7 @@ const execFileAsync = promisify(execFile);
 const DEFAULT_HOST_URL = "http://127.0.0.1:3080";
 const DEFAULT_PRESET = "code";
 const MIN_REQUIRES_USER_INTERACTION_VERSION = "2.1.199";
+const CLAUDE_CODE_SKILL_RELATIVE_PATH = ".claude/skills/claude-code-dsh/SKILL.md";
 
 export {
   CLAUDE_CODE_SERVER_NAME as SERVER_NAME,
@@ -43,6 +44,8 @@ export type { ConfigSnapshot } from "./setup-engine.js";
 export interface SetupClaudeCodeOptions {
   yes: boolean;
   replace: boolean;
+  replaceSkill: boolean;
+  noSkill: boolean;
   dryRun: boolean;
   skipDoctor: boolean;
   noPreset: boolean;
@@ -55,6 +58,11 @@ export interface SetupClaudeCodeOptions {
 export interface InstallClaudeCodeConfigResult {
   changed: boolean;
   backupPath?: string;
+  skill?: InstallClaudeCodeSkillResult;
+}
+
+export interface InstallClaudeCodeSkillResult extends InstallClaudeCodeConfigResult {
+  path: string;
 }
 
 function valueAfter(argv: string[], index: number, option: string): string {
@@ -67,6 +75,8 @@ export function parseSetupArgs(argv: string[]): SetupClaudeCodeOptions {
   const options: SetupClaudeCodeOptions = {
     yes: false,
     replace: false,
+    replaceSkill: false,
+    noSkill: false,
     dryRun: false,
     skipDoctor: false,
     noPreset: false,
@@ -77,6 +87,8 @@ export function parseSetupArgs(argv: string[]): SetupClaudeCodeOptions {
     const argument = argv[index];
     if (argument === "--yes" || argument === "-y") options.yes = true;
     else if (argument === "--replace") options.replace = true;
+    else if (argument === "--replace-skill") options.replaceSkill = true;
+    else if (argument === "--no-skill") options.noSkill = true;
     else if (argument === "--dry-run") options.dryRun = true;
     else if (argument === "--skip-doctor") options.skipDoctor = true;
     else if (argument === "--no-preset") options.noPreset = true;
@@ -99,6 +111,9 @@ export function parseSetupArgs(argv: string[]): SetupClaudeCodeOptions {
   if (options.noPreset && options.preset !== undefined) {
     throw new Error("--preset and --no-preset cannot be used together");
   }
+  if (options.noSkill && options.replaceSkill) {
+    throw new Error("--replace-skill and --no-skill cannot be used together");
+  }
   return options;
 }
 
@@ -110,24 +125,167 @@ function firstClaudeCodeOperation(plan: InstallPlan): UpsertMcpServerOperation {
   return operation;
 }
 
+function firstClaudeCodeSkillOperation(plan: InstallPlan): InstallInstructionsOperation | undefined {
+  return plan.operations.find(
+    (operation): operation is InstallInstructionsOperation => operation.kind === "install-instructions",
+  );
+}
+
+function replaceSkillFromConflictPolicy(operation: InstallInstructionsOperation): boolean {
+  if (operation.conflictPolicy === "fail") return false;
+  if (operation.conflictPolicy === "replace-explicitly") return true;
+  throw new Error(`unsupported instruction conflict policy: ${operation.conflictPolicy as string}`);
+}
+
+function projectRootFromSkillTarget(targetPath: string): string {
+  return dirname(dirname(dirname(dirname(targetPath))));
+}
+
 export async function installClaudeCodePlan(
   plan: InstallPlan,
   expected?: ConfigSnapshot,
 ): Promise<InstallClaudeCodeConfigResult> {
   const operation = firstClaudeCodeOperation(plan);
   const snapshot = expected ?? (await readConfigSnapshot(plan.target.path));
-  if (verifyClaudeCodeMcpConfig(snapshot.content, operation)) return { changed: false };
+  const skill = firstClaudeCodeSkillOperation(plan);
+  const skillProjectRoot = skill === undefined ? undefined : projectRootFromSkillTarget(skill.targetPath);
+  if (skill !== undefined && skillProjectRoot !== undefined) {
+    await assertExistingParentDirectoriesAreNotSymlinks(skill.targetPath, skillProjectRoot);
+  }
+  const skillSnapshot = skill === undefined ? undefined : await readConfigSnapshot(skill.targetPath);
+  if (skill !== undefined) {
+    prepareClaudeCodeSkillInstall(
+      skillSnapshot as ConfigSnapshot,
+      skill.content,
+      replaceSkillFromConflictPolicy(skill),
+      skill.targetPath,
+    );
+  }
+  const mcpAlreadyCurrent = verifyClaudeCodeMcpConfig(snapshot.content, operation);
+  const skillAlreadyCurrent = skill === undefined || skillSnapshot?.content === skill.content;
+  const mcpContent = mcpAlreadyCurrent ? undefined : upsertClaudeCodeMcpConfig(snapshot.content, operation);
+  if (mcpAlreadyCurrent && skillAlreadyCurrent) {
+    return {
+      changed: false,
+      ...(skill === undefined ? {} : { skill: { changed: false, path: skill.targetPath } }),
+    };
+  }
+  if (skill === undefined) {
+    return mcpContent === undefined
+      ? { changed: false }
+      : await atomicInstallText({
+          path: plan.target.path,
+          content: mcpContent,
+          expected: snapshot,
+          backupLabel: "dsh-agentlink",
+          tempLabel: "dsh-agentlink",
+          verify: (content) => claudeCodeIntegration.verifyInstalled(content, operation),
+        });
+  }
 
-  const updated = upsertClaudeCodeMcpConfig(snapshot.content, operation);
+  const skillResult = skillAlreadyCurrent
+    ? { changed: false, path: skill.targetPath }
+    : await installClaudeCodeSkill({
+        projectRoot: projectRootFromSkillTarget(skill.targetPath),
+        replaceSkill: replaceSkillFromConflictPolicy(skill),
+        content: skill.content,
+        ...(skillSnapshot === undefined ? {} : { expected: skillSnapshot }),
+      });
+  let result: InstallClaudeCodeConfigResult;
+  try {
+    result =
+      mcpContent === undefined
+        ? { changed: false }
+        : await atomicInstallText({
+            path: plan.target.path,
+            content: mcpContent,
+            expected: snapshot,
+            backupLabel: "dsh-agentlink",
+            tempLabel: "dsh-agentlink",
+            verify: (content) => claudeCodeIntegration.verifyInstalled(content, operation),
+          });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (skillResult.changed) {
+      throw new Error(`Claude skill was installed, but MCP configuration failed: ${message}. Rerun setup after reviewing the config.`);
+    }
+    throw error;
+  }
+  if (skill === undefined) return result;
+  return { ...result, changed: result.changed || skillResult.changed, skill: skillResult };
+}
+
+function canonicalClaudeCodeSkillSourcePath(): string {
+  return fileURLToPath(new URL("../skill/claude-code-dsh/SKILL.md", import.meta.url));
+}
+
+export function claudeCodeSkillTargetPath(projectRoot: string): string {
+  return join(projectRoot, CLAUDE_CODE_SKILL_RELATIVE_PATH);
+}
+
+export async function readCanonicalClaudeCodeSkill(): Promise<string> {
+  return readFile(canonicalClaudeCodeSkillSourcePath(), "utf8");
+}
+
+async function assertExistingParentDirectoriesAreNotSymlinks(targetPath: string, projectRoot: string): Promise<void> {
+  const parents = [
+    join(projectRoot, ".claude"),
+    join(projectRoot, ".claude", "skills"),
+    dirname(targetPath),
+  ];
+  for (const parent of parents) {
+    let details: Awaited<ReturnType<typeof lstat>>;
+    try {
+      details = await lstat(parent);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+      throw error;
+    }
+    if (details.isSymbolicLink()) {
+      throw new Error(`refusing to install Claude skill through symlinked directory: ${parent}`);
+    }
+    if (!details.isDirectory()) {
+      throw new Error(`Claude skill parent path is not a directory: ${parent}`);
+    }
+  }
+}
+
+function prepareClaudeCodeSkillInstall(
+  snapshot: ConfigSnapshot,
+  content: string,
+  replaceSkill: boolean,
+  targetPath: string,
+): string | undefined {
+  if (snapshot.exists && snapshot.content === content) return undefined;
+  if (snapshot.exists && !replaceSkill) {
+    throw new Error(
+      `Claude Code skill already exists at ${targetPath}; rerun with --replace-skill after reviewing it, or use --no-skill`,
+    );
+  }
+  return content;
+}
+
+export async function installClaudeCodeSkill(options: {
+  projectRoot: string;
+  replaceSkill: boolean;
+  expected?: ConfigSnapshot;
+  content?: string;
+}): Promise<InstallClaudeCodeSkillResult> {
+  const targetPath = claudeCodeSkillTargetPath(options.projectRoot);
+  await assertExistingParentDirectoriesAreNotSymlinks(targetPath, options.projectRoot);
+  const content = options.content ?? (await readCanonicalClaudeCodeSkill());
+  const snapshot = options.expected ?? (await readConfigSnapshot(targetPath));
+  const prepared = prepareClaudeCodeSkillInstall(snapshot, content, options.replaceSkill, targetPath);
+  if (prepared === undefined) return { changed: false, path: targetPath };
   const result = await atomicInstallText({
-    path: plan.target.path,
-    content: updated,
+    path: targetPath,
+    content: prepared,
     expected: snapshot,
-    backupLabel: "dsh-agentlink",
-    tempLabel: "dsh-agentlink",
-    verify: (content) => claudeCodeIntegration.verifyInstalled(content, operation),
+    backupLabel: "dsh-agentlink-skill",
+    tempLabel: "dsh-agentlink-skill",
+    verify: (installed) => installed === content,
   });
-  return result;
+  return { ...result, path: targetPath };
 }
 
 function normalizeHostUrl(raw: string): string {
@@ -249,16 +407,32 @@ Options:
   --no-preset        Follow DSH's own default preset
   --project <path>   Target project root (default: current directory)
   --replace          Replace an existing ${CLAUDE_CODE_SERVER_NAME} configuration
+  --replace-skill    Replace an existing Claude project skill after review
+  --no-skill         Do not install the Claude project skill
   --dry-run          Print the generated MCP server block without writing
   --skip-doctor      Skip the read-only DSH Host check
   --yes, -y          Use defaults without interactive questions
   --help, -h         Show this help`);
 }
 
-function reportClaudeSkillInstallation(projectRoot: string): void {
-  const source = fileURLToPath(new URL("../skill/claude-code-dsh/SKILL.md", import.meta.url));
-  const target = join(projectRoot, ".claude", "skills", "claude-code-dsh", "SKILL.md");
-  console.log(`Claude skill: manual; review ${source} before installing it at ${target}. Setup does not overwrite skills.`);
+function reportDshPermissionBoundary(): void {
+  console.log("DSH permission/sandbox: Host-controlled; setup does not change or verify it");
+}
+
+function reportClaudeSkillStatus(result: InstallClaudeCodeSkillResult | "skipped" | "would-install" | "would-replace" | "already-current", projectRoot: string): void {
+  const target = claudeCodeSkillTargetPath(projectRoot);
+  if (result === "skipped") {
+    console.log("Claude skill: skipped (--no-skill)");
+  } else if (result === "would-install") {
+    console.log(`Claude skill: would install ${target}`);
+  } else if (result === "would-replace") {
+    console.log(`Claude skill: would replace ${target} with backup`);
+  } else if (result === "already-current") {
+    console.log(`Claude skill: already current (${target})`);
+  } else {
+    console.log(`Claude skill: ${result.changed ? "installed" : "already current"} (${result.path})`);
+    if (result.backupPath !== undefined) console.log(`Claude skill backup: ${result.backupPath}`);
+  }
 }
 
 async function reportDshHostReachability(
@@ -318,23 +492,72 @@ async function main(): Promise<void> {
     );
   }
 
-  let plan = claudeCodeIntegration.createInstallPlan({
-    cwd: projectRoot,
-    entryPath,
-    nodePath: process.execPath,
-    hostUrl,
-    dshVersion,
-    replace: options.replace,
-    ...(preset === undefined ? {} : { preset }),
-  });
-  let operation = firstClaudeCodeOperation(plan);
+  const skillContent = options.noSkill ? undefined : await readCanonicalClaudeCodeSkill();
+  const buildPlan = (replace: boolean) =>
+    claudeCodeIntegration.createInstallPlan({
+      cwd: projectRoot,
+      entryPath,
+      nodePath: process.execPath,
+      hostUrl,
+      dshVersion,
+      replace,
+      installSkill: !options.noSkill,
+      replaceSkill: options.replaceSkill,
+      ...(skillContent === undefined ? {} : { skillSourcePath: canonicalClaudeCodeSkillSourcePath(), skillContent }),
+      ...(preset === undefined ? {} : { preset }),
+    });
 
+  let plan = buildPlan(options.replace);
+  let operation = firstClaudeCodeOperation(plan);
   const snapshot = await readConfigSnapshot(configPath);
-  if (verifyClaudeCodeMcpConfig(snapshot.content, operation)) {
+  const mcpAlreadyCurrent = verifyClaudeCodeMcpConfig(snapshot.content, operation);
+  let mcpConflictError: Error | undefined;
+
+  if (!mcpAlreadyCurrent) {
+    try {
+      upsertClaudeCodeMcpConfig(snapshot.content, operation);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.includes("already exists")) throw error;
+      mcpConflictError = error instanceof Error ? error : new Error(message);
+    }
+  }
+
+  let replace = options.replace;
+  if (!mcpAlreadyCurrent && mcpConflictError !== undefined && !replace) {
+    if (options.yes) throw mcpConflictError;
+    replace = await askYesNo(`Replace the existing ${CLAUDE_CODE_SERVER_NAME} or legacy dsh_collab configuration?`);
+    if (!replace) {
+      console.log("No changes made.");
+      return;
+    }
+    plan = buildPlan(true);
+    operation = firstClaudeCodeOperation(plan);
+    upsertClaudeCodeMcpConfig(snapshot.content, operation);
+  }
+
+  const skillOperation = firstClaudeCodeSkillOperation(plan);
+  if (skillOperation !== undefined) {
+    await assertExistingParentDirectoriesAreNotSymlinks(skillOperation.targetPath, projectRoot);
+  }
+  const skillSnapshot = skillOperation === undefined ? undefined : await readConfigSnapshot(skillOperation.targetPath);
+  if (skillOperation !== undefined) {
+    prepareClaudeCodeSkillInstall(
+      skillSnapshot as ConfigSnapshot,
+      skillOperation.content,
+      replaceSkillFromConflictPolicy(skillOperation),
+      skillOperation.targetPath,
+    );
+  }
+  const skillWouldChange = skillOperation !== undefined && skillSnapshot?.content !== skillOperation.content;
+  const mcpWouldChange = !mcpAlreadyCurrent;
+
+  if (!mcpWouldChange && !skillWouldChange) {
     console.log(`${CLAUDE_CODE_SERVER_NAME} already matches this setup. No changes made.`);
     console.log("MCP registration: already current");
     console.log("Project /mcp trust: unknown until approved interactively in Claude Code");
-    reportClaudeSkillInstallation(projectRoot);
+    reportClaudeSkillStatus(options.noSkill ? "skipped" : "already-current", projectRoot);
+    reportDshPermissionBoundary();
     console.log(`Claude approval capability: ${describeClaudeCodeApprovalCapability(claudeVersion)}`);
     if (options.skipDoctor) console.log("DSH Host reachability: not checked (--skip-doctor)");
     else await reportDshHostReachability(hostUrl, dshVersion, preset);
@@ -342,55 +565,39 @@ async function main(): Promise<void> {
     return;
   }
 
-  let replace = options.replace;
-  if (!replace) {
-    try {
-      upsertClaudeCodeMcpConfig(snapshot.content, operation);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (!message.includes("already exists")) throw error;
-      if (options.yes) throw error;
-      replace = await askYesNo(`Replace the existing ${CLAUDE_CODE_SERVER_NAME} or legacy dsh_collab configuration?`);
-      if (!replace) {
-        console.log("No changes made.");
-        return;
-      }
-      plan = claudeCodeIntegration.createInstallPlan({
-        cwd: projectRoot,
-        entryPath,
-        nodePath: process.execPath,
-        hostUrl,
-        dshVersion,
-        replace,
-        ...(preset === undefined ? {} : { preset }),
-      });
-      operation = firstClaudeCodeOperation(plan);
-    }
-  }
-
   if (options.dryRun) {
-    upsertClaudeCodeMcpConfig(snapshot.content, operation);
     console.log(`# Would update ${plan.target.path}`);
     console.log(JSON.stringify({ mcpServers: { [operation.serverName]: renderClaudeCodeOperation(operation) } }, null, 2));
-    console.log("MCP registration: would be configured");
+    console.log(`MCP registration: ${mcpWouldChange ? "would be configured" : "already current"}`);
     console.log("Project /mcp trust: unknown until approved interactively in Claude Code");
-    reportClaudeSkillInstallation(projectRoot);
+    reportClaudeSkillStatus(
+      options.noSkill
+        ? "skipped"
+        : !skillWouldChange
+          ? "already-current"
+          : skillSnapshot?.exists
+            ? "would-replace"
+            : "would-install",
+      projectRoot,
+    );
+    reportDshPermissionBoundary();
     console.log(`Claude approval capability: ${describeClaudeCodeApprovalCapability(claudeVersion)}`);
     console.log("DSH Host reachability: not checked during dry-run");
     return;
   }
 
   const installation = await installClaudeCodePlan(plan, snapshot);
-  console.log(`Config installed: ${installation.changed ? "yes" : "already current"}`);
+  console.log(`Setup changed: ${installation.changed ? "yes" : "already current"}`);
   console.log(`Config path: ${configPath}`);
   if (installation.backupPath !== undefined) console.log(`Backup: ${installation.backupPath}`);
-  console.log(`MCP registration: ${installation.changed ? "configured" : "already current"}`);
+  console.log(`MCP registration: ${mcpWouldChange ? "configured" : "already current"}`);
   console.log("Project /mcp trust: unknown until approved interactively in Claude Code");
-  reportClaudeSkillInstallation(projectRoot);
+  reportClaudeSkillStatus(options.noSkill ? "skipped" : (installation.skill ?? "already-current"), projectRoot);
+  reportDshPermissionBoundary();
   console.log(`Claude approval capability: ${describeClaudeCodeApprovalCapability(claudeVersion)}`);
   console.log(`DSH CLI: ${dshVersion}`);
   console.log(`DSH Host: ${hostUrl}`);
-  console.log(`DSH preset: ${preset ?? "Host default"}`);
+  console.log(`DSH agent preset (composition; not sandbox): ${preset ?? "Host default"}`);
 
   if (options.skipDoctor) console.log("DSH Host reachability: not checked (--skip-doctor)");
   else await reportDshHostReachability(hostUrl, dshVersion, preset);
