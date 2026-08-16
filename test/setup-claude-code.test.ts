@@ -73,10 +73,17 @@ test("Claude Code version parser supports known CLI output formats", () => {
   assert.equal(parseClaudeCodeVersion("2.1.222 (Claude Code)\n"), "2.1.222");
   assert.equal(parseClaudeCodeVersion("Claude Code v2.1.222\n"), "2.1.222");
   assert.equal(parseClaudeCodeVersion("Claude Code 2.1.199\n"), "2.1.199");
+  assert.equal(parseClaudeCodeVersion("Claude Code 2.1.199-beta.1\n"), "2.1.199-beta.1");
+  assert.equal(parseClaudeCodeVersion("Claude Code 2.1.199+build.1\n"), "2.1.199+build.1");
+  assert.equal(parseClaudeCodeVersion("Claude Code 2.1.199-beta.1+build.1\n"), "2.1.199-beta.1+build.1");
   assert.equal(parseClaudeCodeVersion("Claude Code\n"), undefined);
   assert.equal(claudeCodeSupportsHumanApprovalPrompt("2.1.198"), false);
   assert.equal(claudeCodeSupportsHumanApprovalPrompt("2.1.199"), true);
+  assert.equal(claudeCodeSupportsHumanApprovalPrompt("2.1.199-beta.1"), false);
+  assert.equal(claudeCodeSupportsHumanApprovalPrompt("2.1.199+build.1"), true);
+  assert.equal(claudeCodeSupportsHumanApprovalPrompt("2.1.200-beta.1"), false);
   assert.equal(claudeCodeSupportsHumanApprovalPrompt("2.2.0"), true);
+  assert.equal(claudeCodeSupportsHumanApprovalPrompt("999999999999999999999.0.0"), false);
   assert.equal(claudeCodeSupportsHumanApprovalPrompt(undefined), undefined);
   assert.match(describeClaudeCodeApprovalCapability("2.1.198"), /unsupported/);
   assert.match(describeClaudeCodeApprovalCapability(undefined), /unknown/);

@@ -143,24 +143,37 @@ function normalizePreset(raw: string | undefined): string | undefined {
 }
 
 export function parseClaudeCodeVersion(output: string): string | undefined {
-  const match = output.match(/\bv?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)\b/);
+  const match = output.match(/\bv?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)\b/);
   return match?.[1];
 }
 
-function semverCore(version: string): [number, number, number] | undefined {
-  const match = version.match(/^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/);
+interface ParsedClaudeCodeVersion {
+  core: [number, number, number];
+  prerelease: boolean;
+}
+
+function parseComparableClaudeCodeVersion(version: string): ParsedClaudeCodeVersion | undefined {
+  const match = version.match(/^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/);
   if (match === null) return undefined;
-  return [Number.parseInt(match[1] as string, 10), Number.parseInt(match[2] as string, 10), Number.parseInt(match[3] as string, 10)];
+  const core = [
+    Number.parseInt(match[1] as string, 10),
+    Number.parseInt(match[2] as string, 10),
+    Number.parseInt(match[3] as string, 10),
+  ] as [number, number, number];
+  if (core.some((component) => !Number.isSafeInteger(component))) return undefined;
+  return { core, prerelease: match[4] !== undefined };
 }
 
 export function claudeCodeSupportsHumanApprovalPrompt(version: string | undefined): boolean | undefined {
   if (version === undefined) return undefined;
-  const detected = semverCore(version);
-  const minimum = semverCore(MIN_REQUIRES_USER_INTERACTION_VERSION);
+  const detected = parseComparableClaudeCodeVersion(version);
+  const minimum = parseComparableClaudeCodeVersion(MIN_REQUIRES_USER_INTERACTION_VERSION);
   if (detected === undefined || minimum === undefined) return false;
-  for (let index = 0; index < detected.length; index += 1) {
-    if ((detected[index] as number) > (minimum[index] as number)) return true;
-    if ((detected[index] as number) < (minimum[index] as number)) return false;
+  // Approval-prompt behavior is security-sensitive; fail closed for prerelease builds.
+  if (detected.prerelease) return false;
+  for (let index = 0; index < detected.core.length; index += 1) {
+    if ((detected.core[index] as number) > (minimum.core[index] as number)) return true;
+    if ((detected.core[index] as number) < (minimum.core[index] as number)) return false;
   }
   return true;
 }

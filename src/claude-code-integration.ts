@@ -43,9 +43,9 @@ function isPlainJsonObject(value: unknown): value is JsonObject {
 
 function assertJsonNumbersArePreservable(value: unknown): void {
   if (typeof value === "number") {
-    if (Number.isInteger(value) && !Number.isSafeInteger(value)) {
+    if (!Number.isFinite(value) || (Number.isInteger(value) && !Number.isSafeInteger(value))) {
       throw new Error(
-        "Claude Code .mcp.json contains an integer that JavaScript cannot preserve exactly; setup will not rewrite the file.",
+        "Claude Code .mcp.json contains a number that JavaScript cannot preserve exactly; setup will not rewrite the file.",
       );
     }
     return;

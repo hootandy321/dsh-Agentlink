@@ -293,6 +293,14 @@ test("Claude Code setup refuses to rewrite unrelated integers that cannot be pre
   assert.equal(verifyClaudeCodeMcpConfig(config, operation), false);
 });
 
+test("Claude Code setup refuses to rewrite unrelated numbers outside JavaScript's finite range", () => {
+  const operation = firstOperation();
+  const config = '{"revision":1e400,"nested":{"value":-1e400},"mcpServers":{"other":{"command":"other"}}}';
+
+  assert.throws(() => upsertClaudeCodeMcpConfig(config, operation), /cannot preserve exactly/);
+  assert.equal(verifyClaudeCodeMcpConfig(config, operation), false);
+});
+
 test("Claude Code integration rejects non-absolute command and entry paths", () => {
   assert.throws(
     () =>
