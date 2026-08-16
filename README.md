@@ -6,11 +6,11 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-dsh-Agentlink is a plugin that lets you use DeepSeek Harness (DSH) from the AI work tool you already use. Your primary agent can delegate implementation, research, debugging, and long-log work to DSH, then observe, continue, or cancel those sessions without leaving its normal workflow. Codex is supported today; Claude Code, Workbuddy, and other popular AI coding and agent tools are planned.
+dsh-Agentlink is a plugin that lets you use DeepSeek Harness (DSH) from the AI work tool you already use. Your primary agent can delegate implementation, research, debugging, and long-log work to DSH, then observe, continue, or cancel those sessions without leaving its normal workflow. Codex and Claude Code are supported; Workbuddy and other popular AI coding and agent tools are planned.
 
 ## Installation
 
-Prepare the environment first: you need **Node.js 22+**, **Codex**, and a working **DSH CLI**. Configure your preferred model in DSH once; dsh-Agentlink uses that live route automatically.
+Prepare the environment first: you need **Node.js 22+**, a supported caller (**Codex or Claude Code**), and a working **DSH CLI**. Configure your preferred model in DSH once; dsh-Agentlink uses that live route automatically.
 
 ### Install with your AI agent
 
@@ -19,9 +19,11 @@ Send the following repository URL and prompt to Codex or another coding agent:
 ```text
 Install dsh-Agentlink from https://github.com/hootandy321/dsh-Agentlink.
 Check Node.js 22+, the DSH CLI, and my DSH Web Host first. Clone it into a location I approve,
-run npm install and npm run setup -- --yes, then run npm test and npm run doctor.
+run npm install and npm test. For Codex, run npm run setup -- --yes. For Claude Code, run
+npm run setup:claude -- --yes --project /absolute/path/to/my/project.
+For Claude Code, review the shipped skill before installing it; never overwrite an existing project skill silently.
 If dsh_agentlink or the legacy dsh_collab entry already exists, show me the conflict before using --replace.
-Do not start or stop dsh web for me. Tell me when I need to restart Codex.
+Do not start or stop dsh web for me. Tell me when I need to reload the selected caller and approve project MCP trust.
 ```
 
 ### Manual installation
@@ -39,26 +41,38 @@ Do not start or stop dsh web for me. Tell me when I need to restart Codex.
    dsh web
    ```
 
-3. Clone, install, and run the setup wizard.
+3. Clone the repository and install its dependencies.
 
    ```bash
    git clone https://github.com/hootandy321/dsh-Agentlink.git
    cd dsh-Agentlink
    npm install
-   npm run setup
    ```
 
-   The wizard asks for the Host URL and DSH agent preset, backs up your Codex configuration, and installs the MCP entry with `approval_mode = "prompt"`. It does not start DSH or restart Codex.
+4. Configure your caller.
 
-   For unattended defaults, use `npm run setup -- --yes`. To update an existing entry, review it first and then use `npm run setup -- --replace`. The setup command recognizes the legacy `dsh_collab` entry and migrates it to `dsh_agentlink` only after that explicit replacement approval.
-
-4. Restart Codex, then verify the connection.
+   For Codex:
 
    ```bash
+   npm run setup
    npm run doctor
    ```
 
-Use `/mcp` or Codex Settings to confirm that `dsh_agentlink` is connected. The doctor also reports the bridge's fail-closed lock locations under `DSH_BRIDGE_HOME` read-only and never cleans them, so it is safe to run even when a lock is present. For a fully manual TOML setup and all environment variables, see [Manual Codex MCP configuration](docs/manual-configuration.md).
+   The Codex wizard backs up the Codex TOML configuration and installs the MCP entry with `approval_mode = "prompt"`. Restart Codex, then use `/mcp` or Codex Settings to confirm that `dsh_agentlink` is connected. For fully manual TOML setup, see [Manual Codex MCP configuration](docs/manual-configuration.md).
+
+   For Claude Code 2.1.199 or newer, point the setup command at the project that should share `.mcp.json`:
+
+   ```bash
+   npm run setup:claude -- --project /absolute/path/to/your/project
+   cd /absolute/path/to/your/project
+   claude mcp get dsh_agentlink
+   ```
+
+   The Claude setup only edits that project's `.mcp.json`, preserves unrelated servers, and reports MCP registration, project trust, Claude approval support, and DSH Host reachability separately. Open Claude Code in the project and approve the pending server through `/mcp`; the bridge marks `dsh_resolve_approval` as requiring human interaction. The setup does not overwrite Claude skills: review the shipped `skill/claude-code-dsh/SKILL.md` before manually installing it as `.claude/skills/claude-code-dsh/SKILL.md` in the target project.
+
+   Add `--yes` for unattended defaults. To update an existing entry, review it first and then add `--replace`. Both installers recognize the legacy `dsh_collab` entry and migrate it to `dsh_agentlink` only after explicit replacement approval. Neither installer starts DSH or restarts the caller.
+
+The doctor reports the bridge's fail-closed lock locations under `DSH_BRIDGE_HOME` read-only and never cleans them, so it is safe to run even when a lock is present.
 
 This source patch stops new projection/chunk floods from expanding the coordination ledger, but it does not compact an existing 5 MB+ ledger. Preserve the old bridge home for inspection; new delegations can use a separate `DSH_BRIDGE_HOME`. DSH `session.history`, not the bridge ledger, remains the conversation source of truth. See [Known issues](KNOWN_ISSUES.md) for the conservative recovery boundary.
 
@@ -87,15 +101,15 @@ A native subagent remains inside the caller's own agent tree. dsh-Agentlink adds
 - **Save time.** Route implementation, research, extraction, and long-log work to a fast model configured in DSH, such as a DeepSeek V4 route, while your primary agent keeps planning and validating.
 - **Save money.** Moving execution-heavy workloads to a lower-cost DeepSeek route can reduce consumption on more expensive primary models.
 
-Actual speed and cost depend on the selected model, provider, deployment, network, and task. Once installed, you can keep working in Codex as usual and simply ask it to delegate when DSH is the better execution path.
+Actual speed and cost depend on the selected model, provider, deployment, network, and task. Once installed, you can keep working in Codex or Claude Code as usual and simply ask it to delegate when DSH is the better execution path.
 
 ## Use it
 
-Once `dsh web` is running and Codex has reloaded the MCP configuration, ask Codex in normal language, for example:
+Once `dsh web` is running and your caller has loaded and trusted the MCP configuration, ask Codex or Claude Code in normal language, for example:
 
 > Use dsh-Agentlink to delegate this implementation to DSH in the current repository. Keep it visible in DSH Web, report progress, and ask me before any approval.
 
-Codex can then delegate the task, observe its event stream, continue the same session, answer questions with you, or cancel work. Open `http://127.0.0.1:3080` to inspect and interact with the same session in DSH Web.
+The caller can then delegate the task, observe its event stream, continue the same session, answer questions with you, or cancel work. Open `http://127.0.0.1:3080` to inspect and interact with the same session in DSH Web.
 
 ## MCP tools
 
@@ -121,7 +135,7 @@ Normal delegation has no model argument. Configure the desired model only when i
 
 These are planned directions, not implemented capabilities or release commitments.
 
-1. **Claude and other entrypoints** — explore Claude Code, Claude Desktop MCP, Workbuddy, and other callers connected to the same official DSH Web Host.
+1. **More caller entrypoints** — add ZCode, Workbuddy, Claude Desktop MCP, and other callers through the shared Integration Pack architecture.
 2. **Agent invocation and information transport** — improve prompt organization, context packaging, output digests, and compression while keeping questions, approvals, errors, and final answers reliable.
 3. **More integrations** — expand after the Codex bridge and its compatibility contract stabilize.
 

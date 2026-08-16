@@ -71,6 +71,7 @@ test("MCP server registers the full typed surface and rejects a delegate model a
     const approval = tools.tools.find((tool) => tool.name === "dsh_resolve_approval");
     assert.equal(approval?.annotations?.destructiveHint, true);
     assert.equal(approval?.annotations?.idempotentHint, false);
+    assert.deepEqual(approval?._meta, { "anthropic/requiresUserInteraction": true });
 
     const invalidDelegate = await client.callTool({
         name: "dsh_delegate",

@@ -2,14 +2,17 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 
+import { renderDshSkill } from "../src/skill-content.js";
+
 const root = new URL("../", import.meta.url);
 
 test("public docs and skill preserve connect-only, approval, cancellation, and recovery safety contracts", async () => {
-  const [readme, architecture, manualConfiguration, skill] = await Promise.all([
+  const [readme, architecture, manualConfiguration, codexSkill, claudeCodeSkill] = await Promise.all([
     readFile(new URL("README.md", root), "utf8"),
     readFile(new URL("docs/architecture.md", root), "utf8"),
     readFile(new URL("docs/manual-configuration.md", root), "utf8"),
     readFile(new URL("skill/codex-dsh/SKILL.md", root), "utf8"),
+    readFile(new URL("skill/claude-code-dsh/SKILL.md", root), "utf8"),
   ]);
   for (const phrase of [
     "connect-only",
@@ -62,6 +65,46 @@ test("public docs and skill preserve connect-only, approval, cancellation, and r
     "not a DSH Cordis bundle",
     "must not be installed with `dsh plugin --profile ... add ...`",
   ]) {
-    assert.equal(skill.includes(phrase), true, `skill lost required safety phrase: ${phrase}`);
+    assert.equal(codexSkill.includes(phrase), true, `Codex skill lost required safety phrase: ${phrase}`);
   }
+  for (const [label, skill] of [
+    ["Codex skill", codexSkill],
+    ["Claude Code skill", claudeCodeSkill],
+  ] as const) {
+    for (const phrase of [
+      "The shipped `code` preset",
+      "contentUnavailable",
+      "cursor_expired",
+      "unrecoverable_gap",
+      "terminal_missing_final",
+      "workspace claim is cooperative",
+      "Never auto-allow",
+      "Never auto-approve",
+    ]) {
+      assert.equal(skill.includes(phrase), true, `${label} lost shared safety phrase: ${phrase}`);
+    }
+  }
+  for (const phrase of [
+    "connect-only",
+    "never start",
+    "Never auto-approve",
+    "Headless or `dontAsk` operation cannot complete human approval safely",
+    "host_unreachable",
+    "background jobs",
+    "only conversation-content source",
+    "dsh_release_workspace",
+    "supervising Claude Code session must not edit",
+  ]) {
+    assert.equal(claudeCodeSkill.includes(phrase), true, `Claude Code skill lost required safety phrase: ${phrase}`);
+  }
+});
+
+test("caller skill artifacts are generated from the canonical renderer", async () => {
+  const [codexSkill, claudeCodeSkill] = await Promise.all([
+    readFile(new URL("skill/codex-dsh/SKILL.md", root), "utf8"),
+    readFile(new URL("skill/claude-code-dsh/SKILL.md", root), "utf8"),
+  ]);
+
+  assert.equal(codexSkill, renderDshSkill("codex"));
+  assert.equal(claudeCodeSkill, renderDshSkill("claude-code"));
 });

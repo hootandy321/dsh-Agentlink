@@ -228,7 +228,7 @@ export function createMcpServer(service: BridgeService): McpServer {
     "dsh_release_workspace",
     {
       description:
-        "Explicitly release this bridge task's persistent workspace claim. This does not close the DSH session or stop Web/Codex from editing the directory.",
+        "Explicitly release this bridge task's persistent workspace claim. This does not close the DSH session or stop other clients from editing the directory.",
       inputSchema: z.object({ taskId: taskIdSchema }).strict(),
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     },
@@ -269,7 +269,7 @@ export function createMcpServer(service: BridgeService): McpServer {
     "dsh_resolve_approval",
     {
       description:
-        "Resolve one pending DSH sandbox-escalation approval as allow_once or reject. Never auto-allows; configure this Codex MCP tool with approval_mode=prompt before permitting allow_once.",
+        "Resolve one pending DSH sandbox-escalation approval as allow_once or reject. Never auto-allows; keep this tool behind the caller's human approval prompt before permitting allow_once.",
       inputSchema: z
         .object({
           taskId: taskIdSchema,
@@ -280,6 +280,7 @@ export function createMcpServer(service: BridgeService): McpServer {
         })
         .strict(),
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+      _meta: { "anthropic/requiresUserInteraction": true },
     },
     async ({ taskId, requestId, outcome, sinceCursor, expectedRevision }) =>
       handled(() => service.resolveApproval(taskId, requestId, outcome, writePreconditions(sinceCursor, expectedRevision))),

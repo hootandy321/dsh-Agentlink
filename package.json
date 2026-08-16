@@ -14,6 +14,7 @@
   },
   "keywords": [
     "codex",
+    "claude-code",
     "deepseek-harness",
     "dsh",
     "dsh-plugin",
@@ -38,13 +39,15 @@
   "bin": {
     "dsh-agentlink": "dist/index.js",
     "dsh-agentlink-doctor": "dist/doctor.js",
-    "dsh-agentlink-setup": "dist/setup-codex.js"
+    "dsh-agentlink-setup": "dist/setup-codex.js",
+    "dsh-agentlink-setup-claude": "dist/setup-claude-code.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsx src/index.ts",
     "doctor": "tsx src/doctor.ts",
     "setup": "npm run build && node dist/setup-codex.js",
+    "setup:claude": "npm run build && node dist/setup-claude-code.js",
     "test": "node --import tsx --test test/**/*.test.ts",
     "check": "npm run build && npm test",
     "prepack": "npm run check"
