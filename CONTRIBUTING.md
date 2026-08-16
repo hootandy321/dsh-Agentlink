@@ -52,6 +52,8 @@ Do not generalize one successful local run into compatibility with untested vers
 
 ## Pull requests
 
+Read the [pull request review guide](docs/reviewing.md) before submitting or reviewing a change. Codex automatic review follows the repository-specific rules in [`AGENTS.md`](AGENTS.md); deterministic build and test requirements remain in CI.
+
 Before opening a pull request:
 
 ```bash

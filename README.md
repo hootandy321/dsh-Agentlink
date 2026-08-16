@@ -130,6 +130,7 @@ These are planned directions, not implemented capabilities or release commitment
 - [Architecture and safety model](docs/architecture.md) — identity, state, recovery, approvals, cancellation, and workspace coordination
 - [Multi-caller extension architecture](docs/caller-integration-architecture.md) — shared Runtime and Integration Pack boundaries for Codex, Claude Code, and future callers
 - [Validation guide](docs/validation.md) — compatibility and operator acceptance checks
+- [Pull request review guide](docs/reviewing.md) — automatic checks, Codex review rules, and the human merge procedure
 - [Known issues](KNOWN_ISSUES.md) — current upgrade and concurrency caveats
 - [Contributing](CONTRIBUTING.md) and [security](SECURITY.md)
 
