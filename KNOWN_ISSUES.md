@@ -2,7 +2,7 @@
 
 ## Shared coordination ledger can fail on a duplicate cursor
 
-Status: fixed after `0.1.0-alpha.1` (not yet released).
+Status: fixed in `0.1.0-alpha.2`.
 
 A duplicate task cursor was observed when multiple bridge processes, including processes from different builds, shared the same `DSH_BRIDGE_HOME`. The affected task ledger then reported `unrecoverable_gap`; in the observed run, the rejected ledger queue also caused the MCP transport process to exit.
 
