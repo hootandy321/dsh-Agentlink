@@ -67,7 +67,7 @@ function interpretationRules(overlay: SkillOverlay): string {
 - Pending questions/approvals are live Host envelopes keyed by stable rpcId and are not persisted with their text. A \`not-pending\` receipt may mean another DSH Web client won the race.
 - \`dsh_cancel(scope="turn")\` does not kill DSH background jobs. Third-party tools must honor AbortSignal; use DSH job controls for background work.
 - Host restarts lose process-local active/pending/queue/job state. Do not promise seamless recovery.
-- A workspace claim is cooperative, persistent across turn completion, and shared only by bridge processes using the same bridge home. It does not select, enforce, or verify the DSH Host filesystem sandbox; read \`workspaceClaimSemantics.controlsDshSandbox=false\` literally. While a task holds \`exclusive-write\`, the ${overlay.workspaceSupervisor} must not edit that cwd. DSH Web, a different bridge home, and ordinary shell/editor writes are outside enforcement.
+- A workspace claim is cooperative, persistent across turn completion, and shared only by bridge processes using the same bridge home. It does not select, enforce, or verify the DSH Host filesystem sandbox (\`workspaceClaimSemantics.controlsDshSandbox=false\` by design). While a task holds \`exclusive-write\`, the ${overlay.workspaceSupervisor} must not edit that cwd. DSH Web, a different bridge home, and ordinary shell/editor writes are outside enforcement.
 - Do not change \`DSH_HOST_URL\` while reusing a bridge home. Task mappings do not persist Host affinity, so use a separate \`DSH_BRIDGE_HOME\` for another Host.
 
 The user can inspect and interact with the same root/descendant sessions in DSH Web because all sessions are created through the configured official Host registry.`;

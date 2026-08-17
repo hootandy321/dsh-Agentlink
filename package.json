@@ -1,6 +1,6 @@
 {
   "name": "dsh-agentlink",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "private": true,
   "description": "Caller-side bridge from agent frameworks to the official DeepSeek Harness Web Host.",
   "license": "MIT",
