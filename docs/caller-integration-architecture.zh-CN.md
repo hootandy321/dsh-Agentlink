@@ -263,6 +263,34 @@ Setup Engine 保持现有 Codex 安装器已经具备的安全行为：
 
 正常 `dsh_delegate` 不提供 model 参数。Agentlink 读取并报告 DSH 当前模型/可路由状态，但模型选择由用户安装或调整 DSH 时完成。调用方集成不得偷偷覆盖该配置。
 
+### 10.5 支持 DSH 插件能力的 session 启动
+
+DSH 有两个扩展层面，Agentlink 必须将它们分开处理：
+
+- **Host/profile bundle** 由用户安装到某个 DSH profile，并随该 profile 启动；它可以注册插件、工具、命令和 Agent Preset。Agentlink 继续保持 connect-only：不安装 bundle，不选择或改写 Host profile，也不启动、停止或重启 `dsh web`。
+- **Agent Preset** 通过 `session.create.agentPreset` 为单个 session 选择。DSH 会在第一条用户 prompt 前解析并挂载对应组合，将它记录在 session 中，并在恢复 session 时再次使用。Agentlink 已经能够传递调用方指定或安装时默认的 `agentPreset`，所以用户安装的插件只要提供 Agent Preset，现在就能创建具有插件能力的 session，而不是普通默认 session。
+
+当前缺口在可观察性和初始化协议，而不是需要第二套 Runtime。Agentlink 还不会在创建前检查 Host 的 Agent Preset 清单，不会在 delegate/status 结果里报告 Host 实际解析出的 preset，也无法表达创建 session 后仍需类型化初始化的插件。在这些能力完成前，“支持”只指**由用户安装和配置的 preset 型插件**，不表示 Agentlink 能自动发现或适配任意 DSH 插件。
+
+后续首选方案是由唯一一套 DSH backend pipeline 消费声明式 **Session Launch Profile**。profile 可以声明 Agent Preset、必需的 Host 能力、严格白名单内的类型化 DSH session 操作和后置条件；它是配置数据，不是可执行插件代码。固定启动顺序为：
+
+1. 只读获取实时 Host 能力和 Agent Preset 清单。
+2. 使用所选 Agent Preset 创建 session。
+3. 立即保存 task/session 映射并获取 workspace claim。
+4. 只运行已声明、且经过 Host 版本验证支持的类型化 session 初始化操作。
+5. 重新读取实时 session 事实，并验证 preset、初始化后置条件和模型可路由状态。
+6. 只有上述检查成功后才发送用户的真实 prompt。
+
+这个顺序防止一个具体失败：若插件要求创建后的初始化，而 Agentlink 先发送真实 prompt，session history 就会在错误能力下开始；session 变为非空后，DSH 也不再允许安全切换 preset。因此初始化失败必须在发送真实 prompt 前 fail closed；如果 session 已创建，则保留可供检查的 task/session 及其 claim，直到显式释放。
+
+不同 session 的启动要求必须表达为 launch-profile 数据，不能变成调用方专属分支或另一套 `BridgeService`。Launch Profile 不得执行任意 shell 命令、调用无类型的插件 endpoint、安装或启用 Host bundle、修改 DSH 全局设置或放宽审批。如果第二个已验证插件无法用 Agent Preset、官方类型化 session API 和后置条件表达，这才是重新审视本契约或增加窄范围受审 adapter 的触发条件；不能因此开放通用可执行 hook。
+
+按顺序排列的实现 backlog：
+
+1. **必须先做：** 在 delegate/status 中暴露 Host 实际解析出的 Agent Preset；基于 Host preset 清单增加只读的可用性、broken 状态与 trust 报告。
+2. **应在真实插件证明需要后做：** 定义最小 Session Launch Profile schema、恢复状态、类型化操作白名单与后置条件检查。DSH 继续作为实时 session 状态的权威来源；Agentlink 只保存恢复中断初始化所需的协调元数据。
+3. **延期：** 第三方可执行 launch adapter、自动安装插件、自定义 RPC/command hook，以及按插件分叉 Runtime。
+
 ## 11. Runtime Topology
 
 ### 11.1 当前：每客户端 stdio
@@ -341,6 +369,15 @@ Gateway 负责 Agentlink 的连接与协调状态，不负责启动、停止或�
 - 社区已有的 ZCode 工作，例如 `yyz0313` 的 `plugin.json` 与 `SKILL.md` 试验，可在宿主行为验证后按本契约整理为 Integration Pack 并重新提交上游。
 - 只有真实差异才扩展能力字段，避免根据想象设计动态插件系统。
 
+### 横向 TODO：支持 DSH 插件能力的 session 启动
+
+**状态：已支持 preset 型 session；校验与类型化初始化仍延期。**
+
+- 保留 `agentPreset` 作为 DSH 原生的 session 级扩展点。
+- 在宣称广泛插件兼容前，先完成第 10.5 节的可观察性与创建前检查。
+- 只有已验证插件无法仅靠 preset 选择处理时，才引入 Session Launch Profile。
+- 相关逻辑继续位于共享 DSH backend；任何 caller 或插件都不能拥有私有 task/session 状态机。
+
 ### Phase 4：可选协议或拓扑扩展
 
 **状态：已延期。**
@@ -386,14 +423,16 @@ Gateway 负责 Agentlink 的连接与协调状态，不负责启动、停止或�
 | 审批模型不一致 | 某调用方绕过人工 sandbox escalation | integration 必须验证并报告人工边界，否则不宣称完整支持 |
 | 指令漂移 | 不同 caller 的安全规则不一致 | 规范源 + 小型 overlay + 生成/内容测试 |
 | 过早抽象 | 为尚不存在的调用方增加复杂插件 API | 只实现 Codex 和 Claude 已证明需要的接口 |
+| 插件启动逻辑分叉核心状态机 | 各插件或 caller 分别创建 session、初始化工具并验证状态 | 使用一份声明式 launch plan 和一条类型化 backend pipeline；拒绝任意可执行 hook |
 | MCP 规范迁移 | 客户端和 SDK 分处不同协议时代 | 分开记录 protocol/caller 版本，能力优先，渐进兼容 |
 
-延期且未决定：Gateway transport/auth、ACP packaging、跨调用方 task visibility、session attach API、外部第三方 integration 包、独立 npm workspace。
+延期且未决定：Gateway transport/auth、ACP packaging、跨调用方 task visibility、session attach API、外部第三方 integration 包、可执行的第三方 session-launch adapter、独立 npm workspace。
 
 ## 17. 参考项目与规范
 
 这些资料用于形成边界，不表示 Agentlink 与其全部行为兼容：
 
+- [DeepSeek Harness Host API proxy](https://github.com/deepseek-ai/deepseek-harness/blob/main/packages/host/apiproxy/README.md)、[CLI/profile reference](https://github.com/deepseek-ai/deepseek-harness/blob/main/apps/cli/reference/README.md)和[session persistence notes](https://github.com/deepseek-ai/deepseek-harness/blob/main/packages/session/session-persistence-jsonl/README.md)：用于区分 Host/profile bundle 与 session 级 Agent Preset，并确认所选 preset 属于 DSH 的持久 session 状态。
 - [cc-connect core interfaces](https://github.com/chenhg5/cc-connect/blob/main/core/interfaces.go) 与 [registry](https://github.com/chenhg5/cc-connect/blob/main/core/registry.go)：借鉴中立接口、能力与 factory 分离；不复制其完整 Supervisor。
 - [gpt2agent installer](https://github.com/robotlearning123/gpt2agent/blob/main/gpt2agent/install.py)：一个 MCP Runtime 配多个客户端安装器的直接参考。
 - [Scryer](https://github.com/aklos/scryer)：共享 MCP core 与宿主增强分离。

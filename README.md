@@ -80,7 +80,16 @@ Do not start or stop dsh web for me. Tell me when I need to reload the selected 
    claude mcp get dsh_agentlink
    ```
 
-   The Claude setup edits only that project's `.mcp.json` and `.claude/skills/claude-code-dsh/SKILL.md`, preserves unrelated servers, and reports MCP registration, project trust, Claude skill status, Claude approval support, DSH permission/sandbox ownership, and DSH Host reachability separately. Open Claude Code in the project and approve the pending server through `/mcp`; the bridge marks `dsh_resolve_approval` as requiring human interaction.
+   The Claude setup edits only that project's `.mcp.json` and `.claude/skills/claude-code-dsh/SKILL.md`, and preserves unrelated servers. It reports each of these separately:
+
+   - MCP registration
+   - project trust
+   - Claude skill status
+   - Claude approval support
+   - DSH permission/sandbox ownership
+   - DSH Host reachability
+
+   Open Claude Code in the project and approve the pending server through `/mcp`; the bridge marks `dsh_resolve_approval` as requiring human interaction.
 
    Add `--yes` for unattended defaults. To update an existing MCP entry, review it first and then add `--replace`; to update an existing Claude project skill, review it first and then add `--replace-skill`; to manage the skill yourself, add `--no-skill`. Both installers recognize the legacy `dsh_collab` entry and migrate it to `dsh_agentlink` only after explicit replacement approval. Neither installer starts DSH, changes DSH permission/sandbox settings, or restarts the caller.
 
@@ -149,7 +158,8 @@ These are planned directions, not implemented capabilities or release commitment
 
 1. **More caller entrypoints** — complete ZCode support, then add OpenCode, Workbuddy, Claude Desktop MCP, and other callers through the shared Integration Pack architecture.
 2. **Agent invocation and information transport** — improve prompt organization, context packaging, output digests, and compression while keeping questions, approvals, errors, and final answers reliable.
-3. **More integrations** — expand after the shared Runtime and caller compatibility contract stabilize.
+3. **DSH plugin-aware sessions** — preserve the current `agentPreset` path for preset-based plugins, add read-only preset/capability validation and resolved-preset reporting, and introduce a declarative session launch profile only when a plugin proves it needs typed post-create initialization.
+4. **More integrations** — expand after the shared Runtime and caller compatibility contract stabilize.
 
 ## More documentation
 
@@ -163,4 +173,4 @@ These are planned directions, not implemented capabilities or release commitment
 
 [MIT](LICENSE)
 
-Alpha note: DSH is still in developer preview and this community project is independent of DeepSeek and OpenAI. `0.1.0-alpha.1` contains a shared-ledger concurrency bug; the fix is in source and pending release. Read [Known issues](KNOWN_ISSUES.md) before upgrading or running concurrent bridge processes.
+Alpha note: DSH is still in developer preview and this community project is independent of DeepSeek and OpenAI. `0.1.0-alpha.1` contains a shared-ledger concurrency bug; it is fixed in `0.1.0-alpha.2`. Read [Known issues](KNOWN_ISSUES.md) before upgrading or running concurrent bridge processes.

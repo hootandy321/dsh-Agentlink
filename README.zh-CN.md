@@ -35,7 +35,7 @@ dsh-Agentlink 是一个让你直接在原本的 AI 工作工具里调用 DeepSee
 npm run setup:claude -- --yes --project /项目的绝对路径。
 Claude Code 会安装项目 MCP 入口和随仓库提供的项目 skill；只有在审查已有文件后再使用 --replace 和 --replace-skill。
 如果已经存在 dsh_agentlink 或旧版 dsh_collab 配置，先向我展示冲突，再决定是否使用 --replace。
-不要替我启动或停止 dsh web，完成后告诉我何时需要重载调用方并完成 project MCP trust。
+不要替我启动或停止 dsh web，完成后告诉我何时需要重载调用方并完成项目级 MCP 的信任确认。
 ```
 
 ### 手动安装
@@ -80,9 +80,18 @@ Claude Code 会安装项目 MCP 入口和随仓库提供的项目 skill；只有
    claude mcp get dsh_agentlink
    ```
 
-   Claude 向导只修改该项目的 `.mcp.json` 和 `.claude/skills/claude-code-dsh/SKILL.md`，保留无关 server，并分别报告 MCP 注册、project trust、Claude skill 状态、Claude 审批能力、DSH permission/sandbox 归属和 DSH Host 可达性。在该项目中打开 Claude Code，通过 `/mcp` 审批 pending server；bridge 会把 `dsh_resolve_approval` 标记为必须人工交互。
+   Claude 向导只修改该项目的 `.mcp.json` 和 `.claude/skills/claude-code-dsh/SKILL.md`，并保留其他无关的 server 配置。它会分别报告以下各项：
 
-   无交互使用默认值时增加 `--yes`。需要更新已有 MCP entry 时，请先检查原配置，再增加 `--replace`；需要更新已有 Claude project skill 时，请先审查后增加 `--replace-skill`；如果要自己管理 skill，则增加 `--no-skill`。两个配置工具都会识别旧版 `dsh_collab`，并且只在得到这次明确的替换授权后迁移为 `dsh_agentlink`。它们不会启动 DSH、不会改变 DSH permission/sandbox 设置，也不会替你重启调用方。
+   - MCP 注册
+   - 项目级 MCP 信任状态
+   - Claude skill 状态
+   - Claude 审批能力
+   - DSH permission/sandbox 归属
+   - DSH Host 可达性
+
+   在该项目中打开 Claude Code，通过 `/mcp` 批准 pending server；bridge 会把 `dsh_resolve_approval` 标记为必须人工交互。
+
+   无交互使用默认值时增加 `--yes`。需要更新已有 MCP 条目时，请先检查原配置，再增加 `--replace`；需要更新已有的 Claude 项目 skill 时，请先审查后增加 `--replace-skill`；如果要自己管理 skill，则增加 `--no-skill`。两个配置工具都会识别旧版 `dsh_collab`，并且只在得到这次明确的替换授权后迁移为 `dsh_agentlink`。它们不会启动 DSH、不会改变 DSH permission/sandbox 设置，也不会替你重启调用方。
 
 doctor 会以只读方式报告 `DSH_BRIDGE_HOME` 下的 fail-closed 锁位置，且从不清理它们，因此即使存在锁也能安全运行。
 
@@ -149,7 +158,8 @@ DSH 为复杂任务提供持久 session、工具调用、subagent 和人工监�
 
 1. **更多调用方入口** — 完成 ZCode 支持，再通过共享 Integration Pack 架构接入 OpenCode、Workbuddy、Claude Desktop MCP 等调用方。
 2. **Agent 调用与信息传输** — 优化 prompt 组织、上下文打包、输出摘要和压缩策略，同时确保问题、审批、错误和最终答案可靠传输。
-3. **更多集成** — 待共享 Runtime 与调用方兼容性约定稳定后继续扩展。
+3. **支持 DSH 插件能力的 session** — 保留当前面向 preset 型插件的 `agentPreset` 路径，增加只读 preset/能力校验和已解析 preset 的报告；只有真实插件证明需要创建后的类型化初始化时，才引入声明式 session launch profile。
+4. **更多集成** — 待共享 Runtime 与调用方兼容性约定稳定后继续扩展。
 
 ## 更多文档
 
@@ -163,4 +173,4 @@ DSH 为复杂任务提供持久 session、工具调用、subagent 和人工监�
 
 [MIT](LICENSE)
 
-Alpha 说明：DSH 仍处于 developer preview，本项目是独立社区项目，不代表 DeepSeek 或 OpenAI 官方背书。`0.1.0-alpha.1` 包含一个共享账本并发问题；修复已进入源码、尚待发布。升级或并发运行 bridge 前请阅读[已知问题](KNOWN_ISSUES.md)。
+Alpha 说明：DSH 仍处于 developer preview，本项目是独立社区项目，不代表 DeepSeek 或 OpenAI 官方背书。`0.1.0-alpha.1` 包含一个共享账本并发问题，已在 `0.1.0-alpha.2` 中修复。升级或并发运行 bridge 前请阅读[已知问题](KNOWN_ISSUES.md)。
