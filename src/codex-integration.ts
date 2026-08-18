@@ -121,6 +121,16 @@ function rejectUnsupportedInlineConfig(config: string): void {
       "found an inline/dotted dsh-Agentlink MCP configuration; remove or convert it to table form before running setup",
     );
   }
+  // A root-level whole-inline-table assignment (`mcp_servers = { ... }`) cannot be
+  // extended by the appended `[mcp_servers.<name>]` table — TOML forbids adding to
+  // an inline table — so any such file would become invalid after an append. Reject
+  // every root-level assignment, with or without a bridge entry inside.
+  const wholeInlineTableAssignment = /^\s*(?:mcp_servers|"mcp_servers"|'mcp_servers')\s*=/m;
+  if (wholeInlineTableAssignment.test(config)) {
+    throw new Error(
+      "found a root-level inline mcp_servers table; convert it to [mcp_servers.<name>] table form before running setup",
+    );
+  }
 
   const lines = config.split(/\r?\n/);
   let inMcpServersTable = false;
