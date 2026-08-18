@@ -380,6 +380,8 @@ This section defines the boundary for the next implementation PR; it does not ad
 
 Deferred and undecided: Gateway transport/authentication, ACP packaging, cross-caller task visibility, session attach API, external third-party Integration Packs, and an independent npm workspace.
 
+Plugin-aware selection of user-configured DSH Harness presets is a shared Runtime concern rather than a Caller Integration Pack concern. Its separate requirements and architecture are defined in [Plugin-aware DSH routing requirements](plugin-aware-routing-requirements.md) and [Plugin-aware DSH routing architecture](plugin-aware-routing-architecture.md).
+
 ## 17. Reference projects and specifications
 
 These references informed the boundaries; they do not imply full behavioral compatibility:

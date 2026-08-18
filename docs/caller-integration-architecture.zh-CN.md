@@ -380,6 +380,8 @@ Gateway 负责 Agentlink 的连接与协调状态，不负责启动、停止或�
 
 延期且未决定：Gateway transport/auth、ACP packaging、跨调用方 task visibility、session attach API、外部第三方 integration 包、独立 npm workspace。
 
+针对用户自定义 DSH Harness preset 的插件感知选择属于共享 Runtime 的职责，不属于某个 Caller Integration Pack。对应需求和架构分别见[插件感知 DSH 路由需求](plugin-aware-routing-requirements.zh-CN.md)与[插件感知 DSH 路由架构](plugin-aware-routing-architecture.zh-CN.md)。
+
 ## 17. 参考项目与规范
 
 这些资料用于形成边界，不表示 Agentlink 与其全部行为兼容：
