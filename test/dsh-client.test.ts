@@ -263,3 +263,63 @@ test("calls subagent.history with address and history options", async () => {
     await host.close();
   }
 });
+
+test("calls agentPreset.list with empty payload and parses presets", async () => {
+  const host = await startMockDshHost();
+  try {
+    host.setUnaryHandler("agentPreset.list", () => ({
+      presets: [
+        { id: "preset-1", trust: "system", isDefault: true, name: "Default" },
+        { id: "preset-2", trust: "user", isDefault: false, name: "Mine", description: "custom" },
+      ],
+      authorable: true,
+      hasDocument: false,
+    }));
+
+    const result = await clientFor(host.baseUrl).agentPresetList();
+
+    assert.equal(host.requests[0]?.method, "agentPreset.list");
+    assert.deepEqual(host.requests[0]?.payload, {});
+    assert.equal(result.presets.length, 2);
+    assert.equal(result.presets[0]?.id, "preset-1");
+    assert.equal(result.presets[0]?.trust, "system");
+    assert.equal(result.presets[0]?.isDefault, true);
+    assert.equal(result.presets[1]?.trust, "user");
+    assert.equal(result.presets[1]?.name, "Mine");
+    assert.equal(result.presets[1]?.description, "custom");
+    assert.equal(result.authorable, true);
+    assert.equal(result.hasDocument, false);
+  } finally {
+    await host.close();
+  }
+});
+
+test("rejects an agentPreset.list preset with malformed trust", async () => {
+  const host = await startMockDshHost();
+  try {
+    host.setUnaryHandler("agentPreset.list", () => ({
+      presets: [{ id: "preset-1", trust: "admin", isDefault: false }],
+      authorable: true,
+      hasDocument: false,
+    }));
+
+    await assert.rejects(() => clientFor(host.baseUrl).agentPresetList(), DshTransportError);
+  } finally {
+    await host.close();
+  }
+});
+
+test("rejects an agentPreset.list preset with empty broken string", async () => {
+  const host = await startMockDshHost();
+  try {
+    host.setUnaryHandler("agentPreset.list", () => ({
+      presets: [{ id: "preset-1", trust: "user", isDefault: false, broken: "" }],
+      authorable: true,
+      hasDocument: false,
+    }));
+
+    await assert.rejects(() => clientFor(host.baseUrl).agentPresetList(), DshTransportError);
+  } finally {
+    await host.close();
+  }
+});

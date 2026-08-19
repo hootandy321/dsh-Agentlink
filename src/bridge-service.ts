@@ -61,6 +61,9 @@ export class BridgeCapabilityError extends Error {
       | "host_unreachable"
       | "model_unroutable"
       | "workspace_claim_missing"
+      | "preset_not_found"
+      | "preset_broken"
+      | "resolved_preset_mismatch"
       | "unsupported",
     message: string,
     readonly details: Record<string, unknown> = {},
@@ -457,8 +460,35 @@ export class BridgeService {
     this.validateWaitSeconds(waitSeconds);
 
     await this.api.hostDescribe();
-    const agentPreset = input.agentPreset?.trim() || this.config.defaultAgentPreset;
-    const created = await this.api.sessionCreate({ cwd, ...(agentPreset === undefined ? {} : { agentPreset }) });
+    const requestedPreset = input.agentPreset?.trim();
+    const selectedPreset = requestedPreset || this.config.defaultAgentPreset;
+    const selectionMode: "manual" | "dsh-default" = selectedPreset === undefined ? "dsh-default" : "manual";
+    let verification: "not-required" | "verified" | "unavailable";
+    let resolvedPreset: string | undefined;
+
+    if (selectionMode === "manual" && selectedPreset !== undefined) {
+      const roster = await this.api.agentPresetList();
+      const entry = roster.presets.find((preset) => preset.id === selectedPreset);
+      if (entry === undefined) {
+        throw new BridgeCapabilityError(
+          "preset_not_found",
+          `requested agent preset "${selectedPreset}" is not in the DSH preset roster`,
+          { requestedPreset: selectedPreset, promptSent: false },
+        );
+      }
+      if (entry.broken !== undefined) {
+        throw new BridgeCapabilityError(
+          "preset_broken",
+          `requested agent preset "${selectedPreset}" is marked broken and cannot be launched`,
+          { requestedPreset: selectedPreset, presetId: entry.id, promptSent: false },
+        );
+      }
+    }
+
+    const created = await this.api.sessionCreate({
+      cwd,
+      ...(selectedPreset === undefined ? {} : { agentPreset: selectedPreset }),
+    });
 
     let task: TaskRecord;
     try {
@@ -473,6 +503,32 @@ export class BridgeService {
       );
     }
     await this.connection.trackTask(task);
+
+    if (selectionMode === "manual") {
+      if (created.agentPreset === undefined) {
+        verification = "unavailable";
+      } else if (created.agentPreset === selectedPreset) {
+        verification = "verified";
+        resolvedPreset = created.agentPreset;
+      } else {
+        throw new BridgeCapabilityError(
+          "resolved_preset_mismatch",
+          `requested agent preset "${selectedPreset}" resolved to "${created.agentPreset}" on the DSH session`,
+          {
+            taskId: task.taskId,
+            rootSessionId: task.sessionId,
+            sessionId: created.sessionId,
+            requestedPreset: selectedPreset,
+            resolvedPreset: created.agentPreset,
+            promptSent: false,
+          },
+        );
+      }
+    } else {
+      verification = "not-required";
+      resolvedPreset = created.agentPreset;
+    }
+
     const workspaceMode = input.workspaceMode ?? "exclusive-write";
     let workspaceClaim;
     try {
@@ -561,6 +617,10 @@ export class BridgeService {
       detached: waitSeconds === 0,
       model: models.current,
       routable: models.routable,
+      selectionMode,
+      verification,
+      ...(selectedPreset === undefined ? {} : { requestedPreset: selectedPreset }),
+      ...(resolvedPreset === undefined ? {} : { resolvedPreset }),
       ...(promptIssuedRpcId === undefined ? {} : { issuedRpcId: promptIssuedRpcId }),
       baseUrl: this.config.hostUrl,
       workspaceClaim,
