@@ -145,6 +145,28 @@ export const dshSessionListValueSchema = z
   .object({ items: z.array(dshSessionSummarySchema) })
   .passthrough();
 
+export const dshAgentPresetListValueSchema = z
+  .object({
+    presets: z.array(
+      z
+        .object({
+          id: nonEmptyString,
+          trust: z.enum(["system", "user"]),
+          isDefault: z.boolean(),
+          name: z.string().optional(),
+          description: z.string().optional(),
+          broken: nonEmptyString.optional(),
+        })
+        .passthrough(),
+    ),
+    authorable: z.boolean(),
+    hasDocument: z.boolean(),
+  })
+  .passthrough();
+
+export type DshAgentPresetListValue = z.infer<typeof dshAgentPresetListValueSchema>;
+export type DshAgentPreset = DshAgentPresetListValue["presets"][number];
+
 export const dshSessionCreateValueSchema = z
   .object({
     sessionId: nonEmptyString,
@@ -466,6 +488,7 @@ export interface DshApi {
     signal?: AbortSignal,
   ): Promise<DshUnaryResult<DshSessionHistory>>;
   sessionCancel(sessionId: string, signal?: AbortSignal): Promise<DshUnaryResult<z.infer<typeof dshSessionCancelValueSchema>>>;
+  agentPresetList(signal?: AbortSignal): Promise<DshUnaryResult<DshAgentPresetListValue>>;
   sessionUpdateQueue(
     sessionId: string,
     itemId: string,

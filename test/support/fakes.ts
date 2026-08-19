@@ -7,6 +7,8 @@ import type {
 } from "../../src/connection-manager.js";
 import type { EventLedger } from "../../src/event-ledger.js";
 import type {
+  DshAgentPreset,
+  DshAgentPresetListValue,
   DshApi,
   DshClientResponse,
   DshHostDescription,
@@ -35,6 +37,9 @@ export class FakeDshApi implements DshApi {
   };
   sessions: DshSessionSummary[] = [];
   histories = new Map<string, DshSessionHistory>();
+  agentPresets: DshAgentPreset[] = [];
+  agentPresetAuthorable = false;
+  agentPresetHasDocument = false;
   models: DshSessionModels = {
     current: { provider: "test-provider", model: "test-model" },
     routable: true,
@@ -43,6 +48,13 @@ export class FakeDshApi implements DshApi {
   };
   respondReceipt: DshRpcReceipt = { accepted: true };
   nextSessionId = "root-session";
+  /**
+   * Controls the resolved agentPreset reported by `sessionCreate`:
+   * - `undefined` (the default): echo the requested preset back (matching), or omit it when none was requested;
+   * - a string: always report that string as the resolved preset (mismatch / DSH-default-with-observable tests);
+   * - `null`: force the created session to expose no resolved preset even when one was requested (legacy/absent Host).
+   */
+  sessionCreateResolvedAgentPreset?: string | null = undefined;
   updateQueueErrors = new Map<string, Error>();
   private rpcSeq = 0;
 
@@ -67,9 +79,10 @@ export class FakeDshApi implements DshApi {
     if (!this.sessions.some((item) => item.sessionId === sessionId)) {
       this.sessions.push({ sessionId, updatedAt: Date.now(), running: true, blank: false, cwd: payload.cwd });
     }
+    const resolved = this.sessionCreateResolvedAgentPreset !== undefined ? this.sessionCreateResolvedAgentPreset : payload.agentPreset;
     return this.unary("session.create", {
       sessionId,
-      ...(payload.agentPreset === undefined ? {} : { agentPreset: payload.agentPreset }),
+      ...(resolved === undefined || resolved === null ? {} : { agentPreset: resolved }),
     });
   }
 
@@ -101,6 +114,15 @@ export class FakeDshApi implements DshApi {
   async sessionCancel(sessionId: string) {
     this.calls.push({ method: "session.cancel", payload: { sessionId } });
     return this.unary("session.cancel", { accepted: true as const });
+  }
+
+  async agentPresetList(): Promise<DshUnaryResult<DshAgentPresetListValue>> {
+    this.calls.push({ method: "agentPreset.list", payload: {} });
+    return this.unary("agentPreset.list", {
+      presets: structuredClone(this.agentPresets),
+      authorable: this.agentPresetAuthorable,
+      hasDocument: this.agentPresetHasDocument,
+    });
   }
 
   async sessionUpdateQueue(sessionId: string, itemId: string, action: { kind: "remove" }) {

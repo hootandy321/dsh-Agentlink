@@ -432,3 +432,156 @@ test("status and tail hydrate conversation content from live DSH history without
     await rm(home, { recursive: true, force: true });
   }
 });
+
+test("manual preset delegation verifies roster then create then mapping/track then claim/models/prompt", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-dsh-service-"));
+  try {
+    const api = new FakeDshApi();
+    api.agentPresets = [{ id: "preset-1", trust: "user", isDefault: false }];
+    const tasks = new TaskStore(home);
+    const ledger = new EventLedger(home);
+    const service = new BridgeService(config(home), api, tasks, new FakeConnection(ledger), ledger);
+
+    const delegated = await service.delegate({ prompt: "work", cwd: home, agentPreset: "preset-1" });
+
+    assert.equal(delegated.accepted, true);
+    assert.equal(delegated.selectionMode, "manual");
+    assert.equal(delegated.verification, "verified");
+    assert.equal(delegated.requestedPreset, "preset-1");
+    assert.equal(delegated.resolvedPreset, "preset-1");
+    assert.equal("roster" in delegated, false);
+    assert.equal("descriptions" in delegated, false);
+
+    const methods = api.calls.map((call) => call.method);
+    const rosterIdx = methods.indexOf("agentPreset.list");
+    const createIdx = methods.indexOf("session.create");
+    const modelsIdx = methods.indexOf("session.models");
+    const promptIdx = methods.indexOf("session.prompt");
+    assert.ok(rosterIdx >= 0 && rosterIdx < createIdx && createIdx < modelsIdx && modelsIdx < promptIdx);
+    assert.equal((await tasks.list()).length, 1);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("manual preset delegation missing preset fails before create and does not map or prompt", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-dsh-service-"));
+  try {
+    const api = new FakeDshApi();
+    const tasks = new TaskStore(home);
+    const ledger = new EventLedger(home);
+    const service = new BridgeService(config(home), api, tasks, new FakeConnection(ledger), ledger);
+
+    await assert.rejects(
+      () => service.delegate({ prompt: "work", cwd: home, agentPreset: "missing-preset" }),
+      (error: unknown) =>
+        error instanceof BridgeCapabilityError &&
+        error.code === "preset_not_found" &&
+        error.details.requestedPreset === "missing-preset" &&
+        error.details.promptSent === false,
+    );
+    assert.equal(api.calls.some((call) => call.method === "session.create"), false);
+    assert.equal(api.calls.some((call) => call.method === "session.prompt"), false);
+    assert.equal((await tasks.list()).length, 0);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("manual preset delegation broken preset fails with bounded details before create and prompt", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-dsh-service-"));
+  try {
+    const api = new FakeDshApi();
+    api.agentPresets = [{ id: "preset-1", trust: "user", isDefault: false, broken: "missing file" }];
+    const tasks = new TaskStore(home);
+    const ledger = new EventLedger(home);
+    const service = new BridgeService(config(home), api, tasks, new FakeConnection(ledger), ledger);
+
+    await assert.rejects(
+      () => service.delegate({ prompt: "work", cwd: home, agentPreset: "preset-1" }),
+      (error: unknown) =>
+        error instanceof BridgeCapabilityError &&
+        error.code === "preset_broken" &&
+        error.details.presetId === "preset-1" &&
+        error.details.requestedPreset === "preset-1" &&
+        error.details.promptSent === false,
+    );
+    assert.equal(api.calls.some((call) => call.method === "session.create"), false);
+    assert.equal(api.calls.some((call) => call.method === "session.prompt"), false);
+    assert.equal((await tasks.list()).length, 0);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("manual preset delegation mismatch retains mapping and does not claim, read models, or prompt", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-dsh-service-"));
+  try {
+    const api = new FakeDshApi();
+    api.sessionCreateResolvedAgentPreset = "other-preset";
+    api.agentPresets = [{ id: "preset-1", trust: "user", isDefault: false }];
+    const tasks = new TaskStore(home);
+    const ledger = new EventLedger(home);
+    const service = new BridgeService(config(home), api, tasks, new FakeConnection(ledger), ledger);
+
+    await assert.rejects(
+      () => service.delegate({ prompt: "work", cwd: home, agentPreset: "preset-1" }),
+      (error: unknown) =>
+        error instanceof BridgeCapabilityError &&
+        error.code === "resolved_preset_mismatch" &&
+        error.details.requestedPreset === "preset-1" &&
+        error.details.resolvedPreset === "other-preset" &&
+        error.details.promptSent === false &&
+        error.details.taskId !== undefined &&
+        error.details.rootSessionId === "root-session" &&
+        error.details.sessionId === "root-session",
+    );
+    const [mappedTask] = await tasks.list();
+    assert.ok(mappedTask);
+    assert.equal(await new WorkspaceClaimStore(home).get(mappedTask.taskId), undefined);
+    assert.equal(api.calls.some((call) => call.method === "session.models"), false);
+    assert.equal(api.calls.some((call) => call.method === "session.prompt"), false);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("manual preset delegation with absent resolved preset continues as verification unavailable", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-dsh-service-"));
+  try {
+    const api = new FakeDshApi();
+    api.sessionCreateResolvedAgentPreset = null;
+    api.agentPresets = [{ id: "preset-1", trust: "user", isDefault: false }];
+    const tasks = new TaskStore(home);
+    const ledger = new EventLedger(home);
+    const service = new BridgeService(config(home), api, tasks, new FakeConnection(ledger), ledger);
+
+    const delegated = await service.delegate({ prompt: "work", cwd: home, agentPreset: "preset-1" });
+    assert.equal(delegated.selectionMode, "manual");
+    assert.equal(delegated.verification, "unavailable");
+    assert.equal(delegated.requestedPreset, "preset-1");
+    assert.equal("resolvedPreset" in delegated, false);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("DSH-default delegation does not read roster and reports not-required with resolved preset when observed", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-dsh-service-"));
+  try {
+    const api = new FakeDshApi();
+    api.sessionCreateResolvedAgentPreset = "default-preset";
+    const tasks = new TaskStore(home);
+    const ledger = new EventLedger(home);
+    const service = new BridgeService(config(home), api, tasks, new FakeConnection(ledger), ledger);
+
+    const delegated = await service.delegate({ prompt: "work", cwd: home });
+    assert.equal(delegated.selectionMode, "dsh-default");
+    assert.equal(delegated.verification, "not-required");
+    assert.equal("requestedPreset" in delegated, false);
+    assert.equal(delegated.resolvedPreset, "default-preset");
+    assert.equal(api.calls.some((call) => call.method === "agentPreset.list"), false);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
