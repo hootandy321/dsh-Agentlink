@@ -241,6 +241,8 @@ Generated host files may repeat shared text, but there must be one canonical sou
 
 ### 10.2 Attach / Resume
 
+DSH already accepts an optional preallocated `sessionId` on `session.create`. Retrying the same caller-owned id and cwd is an idempotent creation path; it is not a general attach/resume API. DSH also accepts `workspaceId` as an alternative to `cwd`; that DSH workspace identity does not replace Agentlink's cooperative workspace claim, task mapping, or caller authorization semantics.
+
 Creating a new task and attaching to an existing DSH session are separate use cases. A future attach/resume design must define:
 
 - Session existence and authorization checks.
@@ -250,7 +252,7 @@ Creating a new task and attaching to an existing DSH session are separate use ca
 - The differences among canceling a turn, closing a caller attachment, and closing a DSH session.
 - Conflict behavior when several callers observe or write concurrently.
 
-Until those semantics are designed, do not add an optional `sessionId` to `dsh_delegate`.
+`session.create(sessionId)` alone cannot reconstruct Agentlink's task mapping, workspace-claim state, event cursors, supervision state, authorization, or recovery behavior for a session created by DSH Web or another caller. Until those semantics are designed, do not add an optional `sessionId` or `workspaceId` to `dsh_delegate` as an attach/resume shortcut.
 
 ### 10.3 Approvals and questions
 
@@ -324,12 +326,15 @@ Compatibility records distinguish at least these axes:
 | Dimension | Example | Purpose |
 |---|---|---|
 | Agentlink version | `0.1.x` | Product and tool-schema version |
-| Tested DSH Host version | `0.1.0-rc.6` | Host API and event behavior |
+| Live-tested DSH Host version | `0.1.0-rc.6` | Host API and event behavior |
+| Source-audited DSH release | `0.1.0-rc.7` published 2026-08-17; relevant preset, Skill, and session contracts match rc.6 | Detect release-surface drift; does not claim live runtime compatibility |
 | MCP / SDK generation | `@modelcontextprotocol/sdk` declared as `^1.17.5`, lockfile currently resolves `1.30.0`; sessionful SDK or later stateless specification | Transport and capability negotiation |
 | Tested caller version | A specific Codex or Claude Code version | Configuration format and permission behavior |
 | Caller capabilities | stdio, config scopes, human approval, instruction installation | Determines what an integration may enable |
 
 Package versions do not substitute for wire compatibility. MCP is moving from the older sessionful lifecycle toward the self-contained per-request model in the 2026-07-28 specification. Agentlink should retain explicit `taskId` handles and capability detection, but it should not migrate the Runtime ahead of actual client and SDK support.
+
+Likewise, matching rc.6/rc.7 declarations do not substitute for a live rc.7 compatibility run. rc.7 remains source-audited but runtime-unverified until the disposable-workspace operator suite passes against an rc.7 Host.
 
 ## 13. Delivery phases
 
@@ -427,6 +432,8 @@ This section records the acceptance boundary implemented by PR #7 and remains th
 | MCP specification migration | Clients and SDKs implement different protocol generations | Track protocol and caller versions separately, prefer capabilities, and migrate incrementally |
 
 Deferred and undecided: Gateway transport/authentication, ACP packaging, cross-caller task visibility, session attach API, external third-party Integration Packs, executable third-party session-launch adapters, and an independent npm workspace.
+
+Plugin-aware selection of user-configured DSH Harness presets is a shared Runtime concern rather than a Caller Integration Pack concern. Its separate requirements and architecture are defined in [Plugin-aware DSH routing requirements](plugin-aware-routing-requirements.md) and [Plugin-aware DSH routing architecture](plugin-aware-routing-architecture.md).
 
 ## 17. Reference projects and specifications
 

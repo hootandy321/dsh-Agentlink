@@ -165,6 +165,8 @@ These are planned directions, not implemented capabilities or release commitment
 
 - [Architecture and safety model](docs/architecture.md) — identity, state, recovery, approvals, cancellation, and workspace coordination
 - [Multi-caller extension architecture](docs/caller-integration-architecture.md) — shared Runtime and Integration Pack boundaries for Codex, Claude Code, and future callers
+- [Plugin-aware routing requirements](docs/plugin-aware-routing-requirements.md) — product goals, safety boundaries, acceptance criteria, and deferred scope for choosing user-configured DSH Harness presets
+- [Plugin-aware routing architecture](docs/plugin-aware-routing-architecture.md) — hot-path Card Router, cold-path maintainer workflow, live DSH verification, and phased implementation
 - [Validation guide](docs/validation.md) — compatibility and operator acceptance checks
 - [Compatibility matrix](docs/compatibility.md) — tested DSH versions and verification evidence
 - [Known issues](KNOWN_ISSUES.md) — current upgrade and concurrency caveats
