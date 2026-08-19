@@ -47,13 +47,13 @@ If an earlier installation still uses `dsh_collab`, do not keep both entries: ru
 - `DSH_HOME` — DSH home used to derive the bridge home; default `~/.dsh`
 - `DSH_BRIDGE_HOME` — override for task mappings, workspace claims, and the coordination index
 - `DSH_REQUEST_TIMEOUT_MS` — unary and WebSocket-connect timeout; default 30 seconds
-- `DSH_BRIDGE_AGENT_PRESET` — optional installed DSH agent preset; omit it to follow DSH's own default
+- `DSH_BRIDGE_AGENT_PRESET` — optional installed DSH agent preset; omit it to follow DSH's own default. This selects DSH agent composition, not a workspace claim or verified sandbox policy.
 - `DSH_BRIDGE_TIME_ZONE` — optional IANA time zone for human prompts
 - `DSH_HOST_VERSION` — optional operator-declared DSH package version; never inferred from `host.describe.version`
 - `DSH_APPROVAL_TIMEOUT_MS` — disabled by default; enables one best-effort rejection while the current bridge process and connection remain alive
 - `DSH_ALLOW_REMOTE_HOST=true` — explicitly opt in to a trusted non-loopback Host
 
-Normal delegation has no model argument. Configure the desired model in DSH; each delegation reads the Host's current model route.
+Normal delegation has no model argument. Configure the desired model in DSH; each delegation reads the Host's current model route. `workspaceMode` is a bridge-local cooperative claim only; it does not select, enforce, or verify the DSH Host filesystem sandbox.
 
 ## Host and version notes
 

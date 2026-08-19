@@ -1,6 +1,6 @@
 {
   "name": "dsh-agentlink",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "private": true,
   "description": "Caller-side bridge from agent frameworks to the official DeepSeek Harness Web Host.",
   "license": "MIT",
@@ -14,6 +14,7 @@
   },
   "keywords": [
     "codex",
+    "claude-code",
     "deepseek-harness",
     "dsh",
     "dsh-plugin",
@@ -38,13 +39,15 @@
   "bin": {
     "dsh-agentlink": "dist/index.js",
     "dsh-agentlink-doctor": "dist/doctor.js",
-    "dsh-agentlink-setup": "dist/setup-codex.js"
+    "dsh-agentlink-setup": "dist/setup-codex.js",
+    "dsh-agentlink-setup-claude": "dist/setup-claude-code.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsx src/index.ts",
     "doctor": "tsx src/doctor.ts",
     "setup": "npm run build && node dist/setup-codex.js",
+    "setup:claude": "npm run build && node dist/setup-claude-code.js",
     "test": "node --import tsx --test test/**/*.test.ts",
     "check": "npm run build && npm test",
     "prepack": "npm run check"

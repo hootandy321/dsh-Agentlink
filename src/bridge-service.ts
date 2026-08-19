@@ -34,6 +34,12 @@ export interface WritePreconditions {
 
 export type TaskAvailability = "connected" | "host_unreachable" | "session_not_found";
 
+export interface WorkspaceClaimSemantics {
+  enforcement: "bridge-cooperative-only";
+  controlsDshSandbox: false;
+  description: string;
+}
+
 export class DelegationSetupError extends Error {
   constructor(
     readonly stage: "mapping" | "workspace-claim" | "models" | "prompt",
@@ -180,6 +186,15 @@ function queueDepth(snapshot: QueueSnapshot) {
   };
 }
 
+function workspaceClaimSemantics(): WorkspaceClaimSemantics {
+  return {
+    enforcement: "bridge-cooperative-only",
+    controlsDshSandbox: false,
+    description:
+      "workspaceMode is a bridge-local coordination claim shared only by bridge processes using the same bridge home; it does not select, enforce, or verify the DSH Host filesystem sandbox.",
+  };
+}
+
 function statusShape(
   task: TaskRecord,
   connection: HostConnectionSnapshot,
@@ -223,6 +238,7 @@ function statusShape(
     lineage,
     connection,
     workspaceClaim: workspaceClaim ?? null,
+    workspaceClaimSemantics: workspaceClaimSemantics(),
     derivation: "session.list + session.history/event-ledger + events.mux pending/queue snapshots",
   };
 }
@@ -548,6 +564,7 @@ export class BridgeService {
       ...(promptIssuedRpcId === undefined ? {} : { issuedRpcId: promptIssuedRpcId }),
       baseUrl: this.config.hostUrl,
       workspaceClaim,
+      workspaceClaimSemantics: workspaceClaimSemantics(),
       ...(promptTrackingWarning === undefined ? {} : { coordinationWarning: promptTrackingWarning }),
       ...(renameWarning === undefined ? {} : { warning: renameWarning }),
     };
@@ -926,6 +943,7 @@ export class BridgeService {
             rootSessionId: task.sessionId,
             availability: "host_unreachable",
             status: "unknown",
+            workspaceClaimSemantics: workspaceClaimSemantics(),
             error: error instanceof Error ? { name: error.name, message: error.message } : { message: String(error) },
           };
         }

@@ -34,6 +34,12 @@ test("delegate validates cwd, never passes model, stays detached, and followup p
     assert.equal(delegated.accepted, true);
     assert.equal(delegated.detached, true);
     assert.equal(delegated.rootSessionId, "root-session");
+    assert.deepEqual(delegated.workspaceClaimSemantics, {
+      enforcement: "bridge-cooperative-only",
+      controlsDshSandbox: false,
+      description:
+        "workspaceMode is a bridge-local coordination claim shared only by bridge processes using the same bridge home; it does not select, enforce, or verify the DSH Host filesystem sandbox.",
+    });
     const create = api.calls.find((call) => call.method === "session.create");
     const prompt = api.calls.find((call) => call.method === "session.prompt");
     assert.deepEqual(create?.payload, { cwd: await realpath(home) });
@@ -57,6 +63,28 @@ test("delegate validates cwd, never passes model, stays detached, and followup p
     const beforeInvalid = api.calls.length;
     await assert.rejects(() => service.delegate({ prompt: "bad", cwd: join(home, "missing") }), /cwd does not exist/);
     assert.equal(api.calls.length, beforeInvalid);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("delegate read-only is only a bridge claim and does not mutate DSH permissions", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-dsh-service-"));
+  try {
+    const api = new FakeDshApi();
+    const tasks = new TaskStore(home);
+    const ledger = new EventLedger(home);
+    const connection = new FakeConnection(ledger);
+    const service = new BridgeService(config(home), api, tasks, connection, ledger);
+
+    const delegated = await service.delegate({ prompt: "Inspect this", cwd: home, workspaceMode: "read-only" });
+    const create = api.calls.find((call) => call.method === "session.create");
+    const claim = await new WorkspaceClaimStore(home).get(delegated.taskId);
+
+    assert.deepEqual(create?.payload, { cwd: await realpath(home) });
+    assert.equal(api.calls.some((call) => /permission|sandbox/i.test(call.method)), false);
+    assert.equal(claim?.mode, "read-only");
+    assert.equal(delegated.workspaceClaimSemantics.controlsDshSandbox, false);
   } finally {
     await rm(home, { recursive: true, force: true });
   }
@@ -116,6 +144,7 @@ test("status separates availability from execution and reports terminal_missing_
 
     const connected = await service.status(task.taskId);
     assert.equal(connected.availability, "connected");
+    assert.equal(connected.workspaceClaimSemantics.controlsDshSandbox, false);
     assert.equal(connected.execution, "canceled");
     assert.equal(connected.status, "canceled");
     assert.equal(connected.finalMessage, null);

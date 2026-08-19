@@ -265,6 +265,34 @@ Creating a new task and attaching to an existing DSH session are separate use ca
 
 Normal `dsh_delegate` calls do not accept a model argument. Agentlink may read and report the current DSH model/routing state, but users select the model when installing or adjusting DSH. A caller integration must not override it silently.
 
+### 10.5 DSH plugin-aware session launch
+
+DSH has two extension planes that Agentlink must keep separate:
+
+- A **Host/profile bundle** is installed into and started with a user-managed DSH profile. It can register plugins, tools, commands, and Agent Presets. Agentlink remains connect-only: it does not install bundles, select or rewrite the Host profile, or start, stop, or restart `dsh web`.
+- An **Agent Preset** is selected for one session through `session.create.agentPreset`. DSH resolves and mounts that composition before the first user prompt, records it with the session, and uses it again when the session is restored. Agentlink already passes a caller-supplied or installation-time default `agentPreset`, so a user-installed plugin that exposes an Agent Preset can already create a plugin-capable session rather than a plain default session.
+
+The current gap is observability and initialization, not a need for a second Runtime. Agentlink does not yet preflight the Host's Agent Preset roster, report the exact resolved preset returned by the Host in delegate/status output, or represent a plugin that needs typed setup after session creation. Until those pieces exist, support means **preset-based plugins installed and configured by the user**; it does not mean arbitrary DSH plugins are automatically discovered or adapted.
+
+The preferred future abstraction is a declarative **Session Launch Profile** consumed by the one shared DSH backend pipeline. A profile may name an Agent Preset, required Host capabilities, a strict allowlist of typed DSH session operations, and postconditions. It is configuration data, not executable plugin code. The fixed launch order is:
+
+1. Read the live Host capability and Agent Preset roster without mutating it.
+2. Create the session with the selected Agent Preset.
+3. Persist the task/session mapping and acquire the workspace claim immediately.
+4. Run only declared, typed session initialization operations supported by the verified Host version.
+5. Re-read live session facts and verify the preset, initialization postconditions, and model routability.
+6. Send the user's prompt only after those checks succeed.
+
+This ordering prevents a concrete failure: if a plugin requires post-create initialization but Agentlink sends the real prompt first, the session history begins under the wrong capabilities and DSH no longer permits a safe preset swap after the session becomes non-blank. Initialization failure must therefore fail closed before the real prompt, while preserving an already-created task/session and its claim for inspection and explicit release.
+
+Different session startup requirements must be expressed as launch-profile data, not caller-specific branches or alternate `BridgeService` implementations. A Launch Profile must not execute arbitrary shell commands, call untyped plugin endpoints, install or enable Host bundles, mutate global DSH settings, or weaken approvals. If a second verified plugin cannot be expressed as Agent Preset plus official typed session APIs and postconditions, that is the trigger to revisit this contract or add a narrowly reviewed adapter; it is not permission to expose general executable hooks.
+
+Implementation backlog, in order:
+
+1. **Must:** expose the Host-resolved Agent Preset in delegate/status results and add read-only availability, broken-state, and trust reporting based on the Host preset roster.
+2. **Should, after a concrete plugin requires it:** define the minimal Session Launch Profile schema, recovery state, typed operation allowlist, and postcondition checks. DSH remains authoritative for live session state; Agentlink stores only the coordination metadata needed to resume an interrupted initialization.
+3. **Deferred:** third-party executable launch adapters, automatic plugin installation, custom RPC/command hooks, and per-plugin Runtime forks.
+
 ## 11. Runtime topology
 
 ### 11.1 Current: per-client stdio
@@ -312,11 +340,15 @@ Likewise, matching rc.6/rc.7 declarations do not substitute for a live rc.7 comp
 
 ### Phase 0: architecture proposal
 
+**Status: completed in PR #6.**
+
 - Submit only this design document.
 - Do not create Claude Code implementation files or change the shared tool schema.
 - Discuss and confirm the boundaries in the architecture PR before implementation starts.
 
 ### Phase 1: extract the shared setup boundary
+
+**Status: implemented in PR #7.**
 
 - Extract the smallest useful Setup Engine and `CallerIntegration` contract from `setup-codex.ts`.
 - Make Codex the first built-in integration while preserving its existing user behavior and generated configuration.
@@ -326,6 +358,8 @@ Likewise, matching rc.6/rc.7 declarations do not substitute for a live rc.7 comp
 
 ### Phase 2: Claude Code Integration Pack
 
+**Status: implemented in PR #7.**
+
 - Use the same MCP Runtime as Codex.
 - Detect configuration locations and scopes supported by the verified Claude Code version.
 - Produce a declarative install plan and let the shared engine execute it safely.
@@ -334,11 +368,24 @@ Likewise, matching rc.6/rc.7 declarations do not substitute for a live rc.7 comp
 
 ### Phase 3: a second new caller
 
+**Status: in progress with ZCode as the next validation target.**
+
 - Validate the contract with ZCode, Workbuddy, or another MCP host.
 - Existing community ZCode work, such as `yyz0313`'s `plugin.json` and `SKILL.md` experiment, can be resubmitted upstream as an Integration Pack under this contract once the host behavior is verified.
 - Add capability fields only for demonstrated differences; do not design a dynamic plugin system from hypothetical requirements.
 
+### Cross-cutting TODO: DSH plugin-aware session launch
+
+**Status: preset-based sessions are supported; validation and typed initialization are deferred.**
+
+- Preserve `agentPreset` as the native per-session extension point.
+- Implement the observability/preflight work in section 10.5 before claiming broad plugin compatibility.
+- Introduce a Session Launch Profile only against a verified plugin that cannot be handled by preset selection alone.
+- Keep this work inside the shared DSH backend; no caller or plugin gets a private task/session state machine.
+
 ### Phase 4: optional protocol or topology expansion
+
+**Status: deferred.**
 
 - Evaluate an ACP frontend when a first-class external-agent experience is required.
 - Evaluate an explicit Gateway when the triggers in section 11.2 are met.
@@ -346,7 +393,7 @@ Likewise, matching rc.6/rc.7 declarations do not substitute for a live rc.7 comp
 
 ## 14. Claude Code phase-1 acceptance scope
 
-This section defines the boundary for the next implementation PR; it does not add implementation to the architecture PR.
+This section records the acceptance boundary implemented by PR #7 and remains the maintenance baseline for the Claude Code Integration Pack.
 
 - Detect whether Claude Code is available and identify the selected configuration scope and target.
 - Register the same `dsh-agentlink` stdio Runtime.
@@ -381,9 +428,10 @@ This section defines the boundary for the next implementation PR; it does not ad
 | Approval models differ | One caller bypasses human sandbox escalation | Each integration verifies and reports the human boundary or cannot claim full support |
 | Instruction drift | Callers ship inconsistent safety rules | Canonical source plus small overlays and generation/content tests |
 | Premature abstraction | Complexity is added for callers that do not yet exist | Implement only interfaces proved necessary by Codex and Claude |
+| Plugin startup forks the core state machine | Each plugin or caller creates sessions, initializes tools, and verifies state differently | Use one declarative launch plan and one typed backend pipeline; reject arbitrary executable hooks |
 | MCP specification migration | Clients and SDKs implement different protocol generations | Track protocol and caller versions separately, prefer capabilities, and migrate incrementally |
 
-Deferred and undecided: Gateway transport/authentication, ACP packaging, cross-caller task visibility, session attach API, external third-party Integration Packs, and an independent npm workspace.
+Deferred and undecided: Gateway transport/authentication, ACP packaging, cross-caller task visibility, session attach API, external third-party Integration Packs, executable third-party session-launch adapters, and an independent npm workspace.
 
 Plugin-aware selection of user-configured DSH Harness presets is a shared Runtime concern rather than a Caller Integration Pack concern. Its separate requirements and architecture are defined in [Plugin-aware DSH routing requirements](plugin-aware-routing-requirements.md) and [Plugin-aware DSH routing architecture](plugin-aware-routing-architecture.md).
 
@@ -391,6 +439,7 @@ Plugin-aware selection of user-configured DSH Harness presets is a shared Runtim
 
 These references informed the boundaries; they do not imply full behavioral compatibility:
 
+- [DeepSeek Harness Host API proxy](https://github.com/deepseek-ai/deepseek-harness/blob/main/packages/host/apiproxy/README.md), [CLI/profile reference](https://github.com/deepseek-ai/deepseek-harness/blob/main/apps/cli/reference/README.md), and [session persistence notes](https://github.com/deepseek-ai/deepseek-harness/blob/main/packages/session/session-persistence-jsonl/README.md): the basis for separating Host/profile bundles from per-session Agent Presets and for treating the selected preset as durable DSH session state.
 - [cc-connect core interfaces](https://github.com/chenhg5/cc-connect/blob/main/core/interfaces.go) and [registry](https://github.com/chenhg5/cc-connect/blob/main/core/registry.go): neutral interfaces, capabilities, and factory separation without copying its complete Supervisor.
 - [gpt2agent installer](https://github.com/robotlearning123/gpt2agent/blob/main/gpt2agent/install.py): a direct example of configuring one MCP Runtime for several clients.
 - [Scryer](https://github.com/aklos/scryer): separation between a shared MCP core and host enhancements.
