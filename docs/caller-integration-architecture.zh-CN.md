@@ -241,6 +241,8 @@ Setup Engine 保持现有 Codex 安装器已经具备的安全行为：
 
 ### 10.2 Attach / Resume
 
+DSH 已经在 `session.create` 上接受可选的预分配 `sessionId`。使用同一个 caller-owned id 和 cwd 重试是幂等创建路径；它不是通用 attach/resume API。DSH 还接受 `workspaceId` 作为 `cwd` 的替代；这个 DSH workspace identity 不能替代 Agentlink 的 cooperative workspace claim、task mapping 或 caller authorization 语义。
+
 “新建任务”和“接入已有 DSH session”是不同用例。未来若实现 attach/resume，应单独定义：
 
 - session 存在性与权限验证；
@@ -250,7 +252,7 @@ Setup Engine 保持现有 Codex 安装器已经具备的安全行为：
 - cancel 当前 turn、关闭 caller attachment、关闭 DSH session 的区别；
 - 多调用方同时观察或写入时的冲突行为。
 
-在这些语义确定前，不给 `dsh_delegate` 简单增加可选 `sessionId`。
+仅有 `session.create(sessionId)` 无法为由 DSH Web 或另一个 caller 创建的 session 重建 Agentlink 的 task mapping、workspace-claim state、event cursors、supervision state、authorization 或 recovery behavior。在这些语义设计完成前，不要把可选 `sessionId` 或 `workspaceId` 加到 `dsh_delegate` 里作为 attach/resume shortcut。
 
 ### 10.3 审批与提问
 
@@ -297,11 +299,14 @@ Gateway 负责 Agentlink 的连接与协调状态，不负责启动、停止或�
 |---|---|---|
 | Agentlink 版本 | `0.1.x` | 产品与工具 schema 版本 |
 | DSH Host 已测试版本 | `0.1.0-rc.6` | Host API 与事件行为 |
+| Source-audited DSH release | `0.1.0-rc.7` published 2026-08-17；相关 preset、Skill 和 session contracts 与 rc.6 匹配 | 检测 release-surface drift；不声称 live runtime compatibility |
 | MCP / SDK 时代 | `@modelcontextprotocol/sdk` 声明为 `^1.17.5`，lockfile 当前解析为 `1.30.0`；sessionful SDK 或后续无状态规范 | transport 与能力协商 |
 | Caller 已测试版本 | Codex/Claude Code 的具体版本 | 安装格式与权限行为 |
 | Caller capabilities | stdio、配置作用域、人工审批、指令安装 | 决定 integration 能启用什么 |
 
 包版本不能代替 wire compatibility。MCP 正在从旧的 sessionful lifecycle 向 2026-07-28 的逐请求自描述方向演进；Agentlink 应保留显式 `taskId` 和能力检测，但在实际客户端与 SDK 支持前不贸然迁移 Runtime。
+
+同样，rc.6/rc.7 declaration 匹配不能替代 live rc.7 compatibility run。在针对 rc.7 Host 的 disposable-workspace operator suite 通过前，rc.7 仍是 source-audited but runtime-unverified。
 
 ## 13. 分阶段实施
 

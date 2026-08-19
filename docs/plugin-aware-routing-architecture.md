@@ -41,7 +41,7 @@
 - Review roles used to shape the decision:
   - architecture review defined component boundaries, data ownership, and compatibility;
   - critic review challenged transactional claims, fallback safety, caching, canary probing, and over-designed schemas;
-  - fact audit checked current Agentlink code and installed DSH rc.6 API types;
+  - fact audit checked current Agentlink code, the installed DSH rc.6 API types, and the downloaded rc.7 release contracts;
   - requirements review separated current behavior, v1 obligations, and deferred possibilities.
 - User perspective:
   - the user wants their own configured DSH Harness to be used intelligently without choosing a preset for every task;
@@ -118,19 +118,26 @@
 
 ## 4. Current facts and missing facts
 
-- Verified against the installed DSH `0.1.0-rc.6` type surface on 2026-08-18:
-  - `agentPreset.list` returns the current roster with fields including id, trust, default state, description, and broken state;
+- Release and validation scope as of 2026-08-19:
+  - the installed CLI and the live compatibility evidence for this work remain DSH `0.1.0-rc.6`;
+  - npm registry metadata reports [DSH `0.1.0-rc.7`](https://www.npmjs.com/package/@deepseek-ai/dsh/v/0.1.0-rc.7) was published on 2026-08-17;
+  - the downloaded rc.7 `agent-presets`, `skills`, and `sessions` contracts and schemas used by this design are identical to rc.6;
+  - this source/package comparison does not claim that rc.7 runtime behavior has passed Agentlink's live acceptance suite.
+- Verified DSH contract facts:
+  - `agentPreset.list` returns the current roster with per-preset id, trust, default state, description, and optional `broken` reason, plus roster-level `authorable` and `hasDocument` deployment facts;
   - `agentPreset.select` applies only to a blank session and becomes locked after a turn starts;
   - `agentPreset.read` exists as a privileged composition read and is not required by the hot path;
   - `skill.list(sessionId)` returns a session-scoped skill catalog without creating or resuming the agent;
   - `session.create` accepts an optional `agentPreset` and returns the resolved preset when available;
+  - `session.create` also accepts a preallocated `sessionId` and at most one of `workspaceId` or `cwd`; retrying the same caller-owned id and cwd is an idempotent creation path, while a different cwd conflicts;
   - preset discovery rereads its roots, so a new delegation can see additions or removals without an Agentlink catalog service.
+- The last `session.create` fact does not create an Agentlink attach/resume contract. Attaching an arbitrary existing DSH session still requires task-mapping, workspace-claim, event-cursor, authorization, and recovery semantics; see [the multi-caller architecture](caller-integration-architecture.md#102-attach--resume).
 - Current Agentlink facts:
   - `dsh_delegate` already accepts optional `agentPreset` and forwards it to `session.create`;
   - the bridge already owns task mapping, cooperative workspace claims, model-route checks, prompt submission, status, events, approvals, follow-up, cancellation, and recovery;
   - DSH session/history remains authoritative for content;
   - routing rules, automatic selection, and Task Route Records do not exist yet.
-- Facts not currently exposed by DSH rc.6:
+- Facts not currently exposed by the checked rc.6/rc.7 contract surface:
   - a generic per-session tool/capability inventory;
   - a public preset-composition generation id;
   - a preset-catalog revision or change notification;
@@ -242,6 +249,11 @@ flowchart TB
   - an automatic request returns a typed configuration error;
   - an automatic request with no route-rule configuration returns `routing_not_configured`;
   - explicit and DSH-default delegation remain independently available.
+- Exposes a bounded read-only health summary for doctor and Host status:
+  - `missing`, `valid`, or `invalid` configuration state;
+  - rule count when valid;
+  - parse error code and missing/broken target ids when available;
+  - no route bodies, plugin documentation, automatic repair, or Host mutation.
 - A future Agentlink-owned writer must use bounded conflict detection and atomic replacement; the Runtime does not execute writer callbacks from a plugin.
 
 ### 6.4 Card Router
@@ -267,6 +279,8 @@ flowchart TB
 
 - Wraps the DSH `agentPreset.list` fact surface.
 - Normalizes only fields DSH actually reports.
+- Preserves the wire-aligned optional `broken` reason instead of inventing `brokenReason`.
+- Keeps roster-level `authorable` and `hasDocument` as deployment diagnostics: they are not per-preset capabilities and do not affect route eligibility.
 - Keeps `trust` as provenance metadata and never converts it into a permission guarantee.
 - Does not use `agentPreset.read` in the hot path.
 - May use `skill.list` after session creation for diagnostics, but not as a substitute for a generic tool inventory.
@@ -275,6 +289,7 @@ flowchart TB
 
 - Receives the requested preset from explicit selection, automatic routing, or no preset for DSH default.
 - Calls the existing session-creation path once; non-idempotent creation is not automatically retried.
+- Does not expose DSH's optional `sessionId` or `workspaceId` as an attach/resume shortcut; v1 automatic routing creates a new Agentlink task through the existing cwd-based flow.
 - Saves the normal task mapping and an initial Task Route Record after session creation.
 - Checks the preset returned by `session.create` or the fresh session summary.
 - Stops before workspace claim and the real prompt on a selected-versus-resolved mismatch, while returning the task/session identifiers for the unprompted session.
@@ -318,19 +333,69 @@ flowchart TB
 - An illustrative normalized shape is:
 
 ```ts
+interface LivePresetRoster {
+  presets: LivePresetFact[];
+  authorable: boolean;
+  hasDocument: boolean;
+}
+
 interface LivePresetFact {
   id: string;
   trust: "system" | "user";
   isDefault: boolean;
   name?: string;
   description?: string;
-  brokenReason?: string;
+  broken?: string;
 }
 ```
 
-- It is created for one routing attempt and is not persisted as a second catalog source of truth.
+- `broken` is the DSH-provided reason a preset cannot currently compose a session. The preset remains visible for management, but the router must not offer it.
+- `authorable` means the deployment has a configured root where a new preset can be written. `hasDocument` means the Host can hand a preset directory to a native opener. Neither exposes a Host path, describes one specific preset, nor proves routing safety.
+- The roster is created for one routing attempt and is not persisted as a second catalog source of truth.
 
-### 7.2 Route Rule
+### 7.2 Controlled Task Hints
+
+The v1 hot path uses one compact vocabulary owned by the shared Runtime:
+
+```ts
+type TaskKind =
+  | "implementation"
+  | "review"
+  | "debugging"
+  | "log-analysis"
+  | "research"
+  | "planning"
+  | "documentation"
+  | "testing"
+  | "general";
+
+type TaskSignal =
+  | "multi-file"
+  | "tests-required"
+  | "long-context"
+  | "large-logs"
+  | "evidence-required"
+  | "parallelizable";
+
+type RoutingPreference = "speed" | "balanced" | "quality" | "cost";
+
+interface TaskHints {
+  kind?: TaskKind;
+  signals?: TaskSignal[];
+  preference?: RoutingPreference;
+}
+```
+
+- One canonical Runtime definition must feed the MCP schema, route-rule validation, generated caller guidance, and tests. Codex, Claude Code, and later callers do not define their own aliases.
+- The Agentlink release version is the compatibility boundary for this vocabulary; v1 does not add a second vocabulary version field or let a route file redefine it.
+- The MCP schema exposes these enums directly, so the caller does not need to read the route file, preset roster, or plugin documentation to form a valid request.
+- Omitted values normalize to `kind="general"`, `signals=[]`, and `preference="balanced"`. Signals are deduplicated and bounded by the public schema.
+- Unknown object fields or enum values return `routing_hints_invalid`; v1 does not lowercase, translate, synonym-map, or reinterpret arbitrary strings.
+- Route rules may reference only the same core vocabulary. They cannot extend it by adding open strings.
+- A future plugin-specific vocabulary requires a separate design for bounded discovery, namespacing, caller distribution, schema/version drift, and context cost. Until then, specialized presets are described using the core values or selected explicitly.
+- Hints express task fit only. They do not select a model, grant authority, prove safety, alter the workspace claim, or change DSH sandbox, approval, network, credentials, tools, or plugin state.
+
+### 7.3 Route Rule
 
 - The following shape is illustrative and intentionally not a frozen public contract:
 
@@ -339,13 +404,13 @@ interface RouteRule {
   id: string;
   agentPreset: string;
   activation: {
-    taskKinds?: string[];
-    signals?: string[];
-    excludes?: string[];
+    taskKinds?: TaskKind[];
+    signals?: TaskSignal[];
+    excludes?: TaskSignal[];
   };
   routing?: {
     priority?: number;
-    preference?: "speed" | "balanced" | "quality";
+    preference?: RoutingPreference;
   };
   provenance: {
     source: "builtin" | "user" | "maintainer-proposal";
@@ -357,12 +422,13 @@ interface RouteRule {
 - Design constraints:
   - `agentPreset` is the only v1 launch operation;
   - `taskKinds`, `signals`, and `excludes` express routing fit, not security facts;
+  - every vocabulary value is validated against the shared v1 enums; an unknown rule value makes the configuration invalid rather than becoming a private caller dialect;
   - `workspaceClaimMode` stays a request-level Agentlink field unless a demonstrated route requirement needs an eligibility constraint;
   - arbitrary initialization and postcondition arrays are absent;
   - plugin docs and credentials are absent;
   - a separate Launch Profile should be extracted only after a real preset needs reviewed typed initialization beyond `agentPreset`.
 
-### 7.3 Task Route Record
+### 7.4 Task Route Record
 
 ```ts
 interface TaskRouteRecord {
@@ -409,7 +475,9 @@ interface TaskRouteRecord {
   - `routing.mode=auto` present, no `agentPreset`: automatic selection;
   - neither present: current DSH-default behavior;
   - both present: `invalid_request` due to ambiguous authority;
+  - public automatic-routing input does not accept `sessionId` or `workspaceId`; DSH wire support for preallocated creation does not define Agentlink attach/resume;
   - no `model` field is added.
+- The shared MCP schema carries the compact hint enums above. It does not embed route rules, the live preset roster, plugin descriptions, or a dynamic per-user vocabulary.
 - The existing public MCP field may remain `workspaceMode`; this document uses “workspace claim mode” as the conceptual name so it is not confused with DSH sandbox control.
 - Illustrative normal result extension:
 
@@ -474,8 +542,10 @@ sequenceDiagram
 ## 10. Deterministic routing algorithm
 
 - Input normalization:
-  - unknown task hints are rejected or ignored according to the implemented schema, never executed;
-  - strings are normalized only for matching, not interpreted as commands;
+  - omitted values become `general`, no signals, and `balanced`;
+  - unknown fields or values return `routing_hints_invalid` with the bounded supported values;
+  - no case folding, translation, synonym matching, or free-form-to-enum coercion occurs;
+  - signals are deduplicated and bounded before matching;
   - task hints cannot grant permission.
 - Hard eligibility:
   - target `agentPreset` exists in the live roster;
@@ -569,6 +639,11 @@ flowchart LR
   - fresh per automatic call in v1;
   - no file watcher, TTL, `listChanged`, or background poll required;
   - a missing file may mean “no configured auto routes,” while malformed content is a typed configuration error.
+- Route configuration health:
+  - doctor and `dsh_host_status` expose the current read-only state as missing, valid, or invalid;
+  - valid health may include a bounded rule count; invalid health includes a stable parse/validation code;
+  - live diagnosis may name target preset ids that are currently missing or broken;
+  - the health path never repairs the file, starts or reconfigures DSH, or returns documentation bodies.
 - Route-rule writing:
   - initially manual or through an explicit maintainer command;
   - a programmatic writer must preserve unrelated data, detect conflicts, and use an atomic same-directory replacement;
@@ -592,6 +667,7 @@ flowchart LR
 - Proposed routing error vocabulary:
   - `routing_config_invalid`;
   - `routing_not_configured`;
+  - `routing_hints_invalid`;
   - `routing_request_ambiguous`;
   - `no_eligible_route`;
   - `preset_not_found`;
@@ -676,6 +752,7 @@ Existing Supervision Core
   - proves Agentlink can read the live roster and report requested/resolved presets without automatic selection.
 - Work:
   - add typed preset-list support to the DSH adapter;
+  - preserve `broken` and expose roster-level `authorable` / `hasDocument` only as diagnostics;
   - make requested/resolved preset visible in the existing delegate/status result where appropriate;
   - add mock Host tests for present, missing, broken, and mismatched presets.
 - Risk:
@@ -683,6 +760,8 @@ Existing Supervision Core
 - Continue when:
   - supported/tested Host versions return sufficient facts;
   - a mismatch is proven to stop before prompt.
+- Compatibility note:
+  - rc.7 is source/package-audited for this fact surface but remains live-unverified until the normal disposable-workspace acceptance run is completed against an rc.7 Host.
 - Backprop when:
   - resolved preset cannot be observed reliably.
 
@@ -691,12 +770,14 @@ Existing Supervision Core
 - Priority: `must`
 - Dependencies:
   - Phase 1 facts;
-  - agreed minimal route-rule schema.
+  - the shared v1 task-hint vocabulary and minimal route-rule schema.
 - Work:
   - implement fresh route-rule loading;
+  - publish the same controlled hint enums through MCP validation and generated caller guidance;
   - implement side-effect-free deterministic selection;
   - extend existing delegation with mutually exclusive auto/manual/default modes;
   - persist Task Route Record;
+  - add read-only route-configuration health to the existing doctor and `dsh_host_status` surfaces;
   - return compact routing diagnostics.
 - Risk:
   - incorrect route choices or schema overfitting.
@@ -712,7 +793,7 @@ Existing Supervision Core
 - Dependencies:
   - stable experience with manually written v1 rules.
 - Work:
-  - inventory and doctor commands;
+  - richer inventory and maintainer-oriented doctor commands beyond the v1 route-health summary;
   - candidate-rule generation from authorized docs;
   - provenance and uncertainty display;
   - explicit diff/apply through a bounded writer.
@@ -751,6 +832,8 @@ Existing Supervision Core
 - This section describes how to prove the product outcomes in [requirements section 10](plugin-aware-routing-requirements.md#10-v1-acceptance-criteria); it does not create a second set of requirements.
 - Static and unit checks:
   - route schema accepts supported data and rejects executable/unknown shapes;
+  - MCP hints and route rules accept the same controlled values;
+  - omitted hints receive neutral defaults, and unknown hint fields or values return `routing_hints_invalid`;
   - hard filters and scoring are table-driven and deterministic;
   - explicit/manual/default modes remain distinct;
   - ties are deterministic;
@@ -770,6 +853,9 @@ Existing Supervision Core
   - no routing request preserves DSH-default behavior;
   - Codex and Claude integrations consume the same MCP schema;
   - caller-specific setup code does not enter routing logic.
+- Compatibility evidence:
+  - record rc.6 live results separately from rc.7 source/package comparison;
+  - do not promote rc.7 to live-tested support until the operator acceptance suite passes against an rc.7 Host.
 - External-interference tests:
   - change the mock roster after selection or return a different resolved preset at creation;
   - assert a mapped unprompted session, typed failure, and `promptSent=false`;
@@ -840,6 +926,8 @@ npm pack --dry-run --ignore-scripts
 | Silent fallback changes behavior | User expects routing-suite but receives default code preset | No automatic fallback in v1 |
 | Meta Skill executes untrusted docs | README prompt injection runs commands or changes policy | Candidate data only; bounded core writer and explicit apply |
 | Multiple callers diverge | Codex and Claude implement different route scoring | Router exists only in shared Runtime |
+| Caller and rule vocabularies drift | Caller emits `multi_file` while a rule expects `multi-file`, so every automatic route misses | One Runtime-owned enum source feeds MCP, rule validation, caller guidance, and tests; unknown values fail closed |
+| Shared route file is malformed | Every caller's automatic delegation fails with no visible explanation | Fail closed and expose read-only route health through doctor and Host status |
 | Schema expands ahead of evidence | Capability graph and launch hooks become another plugin runtime | Add fields only for demonstrated presets/failures |
 | Cache creates stale selections | A long-lived process misses a user preset update | Fresh roster/rules in v1; profile before caching |
 | Route metadata becomes telemetry | Local state accumulates prompts and success history | Content-free Task Route Record only |
@@ -850,6 +938,7 @@ npm pack --dry-run --ignore-scripts
   - final MCP field names;
   - dedicated explain tool versus doctor/status mode;
   - route-rule distribution and third-party contribution model;
+  - bounded plugin-specific hint vocabulary and its discovery/distribution contract;
   - typed task adapter operations;
   - DSH capability endpoint proposal;
   - caching, change notification, fallback, canary, and self-tuning.

@@ -17,7 +17,7 @@
 - The normal delegation path must therefore use a compact internal routing index rather than loading every plugin README or Profile Card into the caller model's context.
 - The product outcome is:
   - users configure or teach Agentlink how their DSH presets should be used;
-  - the caller supplies the task and, only when requested, compact task hints;
+  - the caller supplies the task and, only when requested, compact task hints from a shared Agentlink vocabulary exposed by the MCP schema;
   - Agentlink selects a preset locally, verifies the live DSH result, and starts the session;
   - the caller continues to observe, follow up, answer, approve, cancel, and release the task through the existing `dsh_*` supervision surface;
   - normal delegation does not expose the complete plugin catalog or spend model tokens rereading documentation.
@@ -97,6 +97,8 @@ flowchart LR
   - “Route Card” is the earlier conceptual name; v1 uses `Route Rule` as the formal data-object name. The `Card Router` component consumes Route Rules.
 - **Task hint**
   - Optional caller-provided structured information such as task kind, required evidence, scale, or parallelism preference.
+  - v1 core values are a small Agentlink-owned [controlled vocabulary](plugin-aware-routing-architecture.md#72-controlled-task-hints) exposed through the shared MCP schema and consumed unchanged by every caller integration and route-rule validator.
+  - Route files and caller integrations must not invent synonyms or private core values; plugin-specific extension vocabulary is deferred until it has a bounded discovery and distribution contract.
   - It must not grant permissions or override safety boundaries.
 - **Task Route Record**
   - Content-free coordination metadata recording what this delegation requested, selected, and resolved.
@@ -114,10 +116,12 @@ flowchart LR
 |---|---|---|---|
 | Caller support | Shared MCP Runtime; caller integrations are separate setup packs | One caller-neutral routing behavior | Other protocol frontends over the same core |
 | Preset selection | Caller may provide `agentPreset`; omission uses DSH default | Explicit preset remains; opt-in automatic selection is added | Learned or semantic fallback after evidence |
-| Preset discovery | DSH rc.6 exposes `agentPreset.list` | Read it immediately before each automatic delegation | Change events or bounded caching if profiling proves a need |
+| Preset discovery | DSH rc.6 exposes `agentPreset.list`; the relevant rc.7 release contract is source/package-audited as identical, with live validation pending | Read it immediately before each automatic delegation | Change events or bounded caching if profiling proves a need |
 | Session verification | `session.create` can resolve and return a preset | Compare selected and resolved preset before sending the real task | Typed capability endpoint if DSH exposes one |
-| Skill discovery | DSH rc.6 exposes `skill.list(sessionId)` | Use only for post-create diagnosis where relevant | Broader typed session capability inventory |
+| Session addressing | DSH `session.create` accepts preallocated `sessionId` and either `workspaceId` or `cwd` | Keep automatic routing on the existing new-task path; do not expose these as attach/resume inputs | Separate attach/resume design if task, claim, cursor, and recovery semantics are defined |
+| Skill discovery | DSH rc.6 and rc.7 expose the same `skill.list(sessionId)` contract | Use only for post-create diagnosis where relevant | Broader typed session capability inventory |
 | Plugin understanding | No Agentlink routing knowledge base | User/maintainer-authored compact route rules | Meta Skill-assisted candidate generation |
+| Hint vocabulary | No routing-hint contract | One compact Runtime-owned enum set shared by MCP schema, validators, tests, and generated caller guidance | Bounded plugin-specific extension vocabulary only after a separate distribution design |
 | Normal prompt cost | Caller must already know the preset | No README or full candidate list in the hot path | Local semantic retrieval only for demonstrated ambiguity |
 | Fallback | DSH default or caller choice | No silent automatic fallback | Explicit, safety-equivalent fallback if it becomes provable |
 
@@ -130,7 +134,7 @@ flowchart LR
   - Agentlink validates the rule shape and confirms that its target preset currently exists;
   - the user explicitly applies the rule.
 - Ordinary automatic delegation:
-  - the caller sends the task, cwd, workspace claim mode, and optional task hints;
+  - the caller sends the task, cwd, workspace claim mode, and optional controlled task hints;
   - Agentlink rereads current route rules and the live DSH preset roster;
   - it deterministically chooses one preset;
   - it creates a DSH session and verifies the resolved preset;
@@ -155,7 +159,7 @@ flowchart LR
 
 - Automatic routing must live in the shared Runtime, not in Codex-, Claude Code-, ZCode-, or Workbuddy-specific Integration Packs.
 - Every supported caller must observe the same routing inputs, outputs, errors, and safety behavior for the same Runtime version.
-- Caller integrations may teach their host how to supply task hints, but they must not copy or replace the router.
+- Caller integrations may teach their host how to supply the shared task hints, but they must not define a caller-specific vocabulary, copy, or replace the router.
 
 ### FR-02: Backward-compatible selection modes
 
@@ -164,11 +168,13 @@ flowchart LR
 - Automatic routing must require an explicit opt-in mode in v1.
 - A request that provides both an explicit preset and automatic routing must fail as ambiguous rather than silently choosing one.
 - Normal delegation must not gain a public model selector; model routing remains DSH-owned.
+- Although the DSH creation wire accepts a preallocated `sessionId` and either `workspaceId` or `cwd`, automatic routing must use Agentlink's existing new-task flow. Those wire fields must not be exposed as attach/resume parameters until a separate coordination design defines task mapping, claims, event cursors, authorization, and recovery.
 
 ### FR-03: Fresh live discovery
 
 - Immediately before automatic selection, Agentlink must read the current DSH Agent Preset roster.
 - The router must reject a target that is absent or marked broken.
+- The adapter must preserve DSH's optional `broken` reason for diagnosis. Roster-level `authorable` and `hasDocument` facts may be reported by doctor or a maintainer workflow, but they must not influence hot-path eligibility or be misrepresented as per-preset capabilities.
 - A Host reachability failure must remain `host_unreachable`; it must not be misreported as “no matching route.”
 - v1 must not depend on an Agentlink-maintained copy of the DSH roster as its source of truth.
 
@@ -183,6 +189,7 @@ flowchart LR
   - deterministic priority;
   - optional human-readable short reason;
   - provenance indicating whether the rule was written by the user, shipped by Agentlink, or proposed by a maintenance workflow.
+- v1 `taskKinds`, positive signals, exclusions, and preferences must reference the same controlled values accepted by the public task-hint schema. Unknown values make the rule configuration invalid; they are not silently normalized as synonyms.
 - A route rule must not contain:
   - arbitrary shell commands or executable callbacks;
   - credentials;
@@ -196,6 +203,8 @@ flowchart LR
 - The normal router must not invoke an LLM, embedding service, or remote search.
 - It must first apply hard eligibility checks, then deterministic scoring and tie-breaking.
 - The same task hints, route rules, and live roster must yield the same selected preset.
+- One canonical Runtime definition must generate or validate the MCP enums, route-rule schema, caller guidance, and table tests. Caller packs learn the vocabulary from that shared contract and never need the user's complete rule file or plugin catalog.
+- Missing hints normalize to the documented neutral defaults. Unknown fields or unknown controlled values fail with a typed routing-hint error; v1 does not silently accept arbitrary strings.
 - Approximately one hundred rules must remain practical with ordinary in-memory filtering; v1 does not require a vector database or bitset index.
 
 ### FR-06: Staged fail-closed launch
@@ -237,6 +246,7 @@ flowchart LR
 
 - The first implementation must distinguish at least:
   - automatic routing not configured;
+  - task hints invalid for the current shared vocabulary;
   - no eligible route;
   - route rule invalid;
   - selected preset not found;
@@ -259,12 +269,14 @@ flowchart LR
 - The normal Runtime must not read plugin README files for every task.
 - A maintenance workflow may:
   - inventory live presets;
+  - report roster-level `authorable` and `hasDocument` deployment facts without treating them as route-safety evidence;
   - inspect user-authorized plugin files and documentation;
   - propose compact route rules;
   - validate rule syntax and target existence;
   - show a diff;
   - apply a user-approved change through a bounded writer;
   - diagnose a failed or degraded rule.
+- Doctor and Host-status diagnostics must report route configuration health as missing, valid, or invalid, with bounded rule counts and target-preset problems when available. They are read-only and must not repair the rule file or Host.
 - A maintenance workflow must treat third-party documentation as untrusted input.
 - It must not execute arbitrary setup hooks or alter DSH Host configuration without a separate explicit operation and user authority.
 
@@ -312,12 +324,14 @@ flowchart LR
 - Multiple Agentlink stdio processes may share one state home and Host as defined by the existing architecture.
 - A route-rule write performed by an Agentlink maintenance tool must use bounded, conflict-aware, atomic local-file update behavior.
 - Runtime reads must fail closed on malformed route configuration rather than guessing.
+- The same malformed shared rule file may block automatic routing in every caller process, so doctor and Host status must expose that configuration failure directly rather than leaving users to infer it from repeated `routing_config_invalid` results.
 - The roster-read-to-session-create race cannot be eliminated with current DSH APIs; post-create verification is the required mitigation.
 
 ### NFR-05: Compatibility
 
 - The routing feature must not require a new long-lived branch or caller-specific Runtime release.
 - The first implementation must record the tested Agentlink, DSH Host, MCP SDK, and caller versions.
+- DSH rc.7 was published on 2026-08-17. The `agentPreset`, `skill`, and `session.create` release contracts used by this design are unchanged from the installed rc.6 package, but rc.7 runtime behavior remains unverified until the normal live compatibility suite is run.
 - Those tested versions belong in operator acceptance evidence or release/compatibility notes; they are diagnostic evidence, not a new runtime gate by themselves.
 - Unknown DSH behavior must be reported as unverified rather than generalized from one local run.
 - Host API additions such as capability lists, catalog revisions, or change notifications must remain optional until implemented and tested by DSH.
@@ -356,9 +370,12 @@ flowchart LR
   - all existing bridge tests continue to pass.
 - Selection:
   - representative tasks map deterministically to expected presets using only route rules and task hints;
+  - the MCP task-hint schema and route-rule validator accept the same controlled values across Codex and Claude Code;
+  - missing hints normalize to the documented neutral values, while unknown fields or enum values return `routing_hints_invalid`;
   - tied scores resolve deterministically;
   - an automatic request with no configured route rules returns `routing_not_configured`, while explicit and DSH-default delegation remain available;
   - malformed rules fail closed;
+  - doctor or Host status reports missing, valid, and malformed route configuration distinctly;
   - absent or broken presets are never selected.
 - Launch:
   - the bridge reads the live roster before an automatic delegation;
@@ -384,7 +401,8 @@ flowchart LR
   - when installed, include routing-suite presets such as `router-standard` or `router-spec` as optional test subjects;
   - verify the created sessions remain visible in DSH Web;
   - record selected preset, resolved preset, execution outcome, external test evidence, and any manual reselection;
-  - do not treat the DSH final message alone as proof of task success.
+  - do not treat the DSH final message alone as proof of task success;
+  - keep rc.7 marked source-audited but runtime-unverified until a disposable-workspace live run completes against an rc.7 Host.
 
 ## 11. Cheapest falsifier
 
@@ -415,7 +433,8 @@ flowchart LR
   - online self-tuning, shadow routing, success scoring, or telemetry collection;
   - arbitrary per-plugin task compilers or initialization hooks;
   - mutation of a running session's Agent Preset;
-  - a new Agentlink Gateway, attach/resume semantics, or another task state machine;
+  - exposing DSH `sessionId` or `workspaceId` as a shortcut to a new Agentlink Gateway, attach/resume semantics, or another task state machine;
+  - route-file-defined or caller-specific core hint strings; a future extension vocabulary needs an explicit bounded discovery and distribution design;
   - a public per-task model selector.
 - Reconsider a deferred capability only when a concrete failure cannot be handled by current DSH facts, explicit configuration, version records, deterministic matching, types, or ordinary tests.
 
@@ -443,6 +462,7 @@ flowchart LR
   - Agent Preset as the v1 launch unit;
   - fresh DSH roster read and post-create verification;
   - opt-in, deterministic, model-free routing;
+  - one compact Runtime-owned v1 task-hint vocabulary shared through the MCP schema;
   - no silent fallback and no new security authority.
 - Deliberately not frozen:
   - exact route-rule file location and syntax;

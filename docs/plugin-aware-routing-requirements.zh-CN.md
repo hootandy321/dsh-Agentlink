@@ -17,7 +17,7 @@
 - 因此，普通委派路径必须使用紧凑的内部路由索引，而不是把每个插件 README 或 Profile Card 加载到调用方模型上下文中。
 - 产品结果是：
   - 用户配置或教会 Agentlink 如何使用自己的 DSH presets；
-  - 调用方提供任务，并且只在需要时提供紧凑的任务提示；
+  - 调用方提供任务，并且只在需要时提供由 MCP schema 暴露的共享 Agentlink 词表里的紧凑 task hints；
   - Agentlink 在本地选择 preset，验证实时 DSH 结果，然后启动 session；
   - 调用方继续通过现有 `dsh_*` 监督界面观察、继续、回答、审批、取消和释放任务；
   - 普通委派不会暴露完整插件目录，也不会消耗模型 token 反复阅读文档。
@@ -97,6 +97,8 @@ flowchart LR
   - “Route Card” 是早期概念名称；v1 统一使用 `Route Rule` 作为正式数据对象名，`Card Router` 组件负责消费 Route Rules。
 - **Task hint**
   - 调用方可选提供的结构化信息，例如任务类型、所需证据、规模或并行偏好。
+  - v1 core values 是一组小型、由 Agentlink 拥有的受控词表，通过共享 MCP schema 暴露，并被所有调用方集成和 route-rule validator 原样消费。
+  - Route files 和调用方集成不能发明同义词或私有 core values；plugin-specific extension vocabulary 延后，直到它有有界的发现和分发契约。
   - 它不能授予权限或覆盖安全边界。
 - **Task Route Record**
   - 不含内容的协调元数据，记录本次委派请求、选择和解析了什么。
@@ -114,10 +116,12 @@ flowchart LR
 |---|---|---|---|
 | 调用方支持 | 共享 MCP Runtime；调用方集成是独立 setup packs | 一套调用方中立的路由行为 | 基于同一 core 的其他协议前端 |
 | Preset 选择 | 调用方可以提供 `agentPreset`；省略则使用 DSH 默认值 | 保留显式 preset；增加显式启用的自动选择 | 有证据后再做学习式或语义 fallback |
-| Preset 发现 | DSH rc.6 暴露 `agentPreset.list` | 每次自动委派前立即读取 | 若性能分析证明需要，再加入变更事件或有界缓存 |
+| Preset 发现 | DSH rc.6 暴露 `agentPreset.list`；相关 rc.7 release contract 已 source/package-audited 为相同，live validation pending | 每次自动委派前立即读取 | 若性能分析证明需要，再加入变更事件或有界缓存 |
 | Session 验证 | `session.create` 可以解析并返回 preset | 发送真实任务前比较 selected 和 resolved preset | 如果 DSH 暴露 typed capability endpoint，再使用它 |
-| Skill 发现 | DSH rc.6 暴露 `skill.list(sessionId)` | 只在相关的 post-create 诊断中使用 | 更广泛的 typed session capability inventory |
+| Session addressing | DSH `session.create` 接受预分配的 `sessionId`，并接受 `workspaceId` 或 `cwd` 之一 | 自动路由保留现有 new-task 路径；不把这些字段暴露为 attach/resume inputs | 单独设计 task、claim、cursor 和 recovery 语义后再考虑 attach/resume |
+| Skill 发现 | DSH rc.6 和 rc.7 暴露相同的 `skill.list(sessionId)` contract | 只在相关的 post-create 诊断中使用 | 更广泛的 typed session capability inventory |
 | 插件理解 | 没有 Agentlink 路由知识库 | 用户或维护者编写的紧凑 route rules | Meta Skill 辅助生成候选 |
+| Hint vocabulary | 没有 routing-hint contract | 一组紧凑、Runtime-owned enum，由 MCP schema、validators、tests 和生成的 caller guidance 共享 | 仅在单独设计发现/分发机制后，才支持有界 plugin-specific extension vocabulary |
 | 普通 prompt 成本 | 调用方必须已经知道 preset | 热路径不包含 README 或完整候选列表 | 仅在证明存在歧义时使用本地语义检索 |
 | Fallback | DSH 默认值或调用方选择 | 不做静默自动 fallback | 若可证明安全等价，再做显式 fallback |
 
@@ -155,7 +159,7 @@ flowchart LR
 
 - 自动路由必须位于共享 Runtime 中，而不是 Codex、Claude Code、ZCode 或 Workbuddy 专属 Integration Packs 中。
 - 对于同一 Runtime 版本，每个受支持调用方必须观察到相同的路由输入、输出、错误和安全行为。
-- 调用方集成可以教自己的 host 如何提供 task hints，但不能复制或替换 router。
+- 调用方集成可以教自己的 host 如何提供共享 task hints，但不能定义 caller-specific vocabulary、复制或替换 router。
 
 ### FR-02：向后兼容的选择模式
 
@@ -164,11 +168,13 @@ flowchart LR
 - v1 中，自动路由必须要求显式 opt-in mode。
 - 同时提供显式 preset 和自动路由的请求必须以歧义失败，而不是静默选择其中一个。
 - 普通委派不能新增公开 model selector；model routing 仍由 DSH 拥有。
+- 虽然 DSH creation wire 接受预分配的 `sessionId`，并接受 `workspaceId` 或 `cwd` 之一，但自动路由必须使用 Agentlink 现有 new-task flow。在单独 coordination design 定义 task mapping、claims、event cursors、authorization 和 recovery 前，这些 wire fields 不能暴露为 attach/resume 参数。
 
 ### FR-03：新鲜的实时发现
 
 - 自动选择前，Agentlink 必须立即读取当前 DSH Agent Preset roster。
 - router 必须拒绝不存在或标记为 broken 的目标。
+- adapter 必须保留 DSH 可选的 `broken` reason 用于诊断。Roster-level `authorable` 和 `hasDocument` facts 可以由 doctor 或 maintainer workflow 报告，但不能影响 hot-path eligibility，也不能被误表述为 per-preset capabilities。
 - Host 可达性失败必须继续是 `host_unreachable`；不能误报为“没有匹配路由”。
 - v1 不能依赖 Agentlink 维护的 DSH roster 副本作为真相来源。
 
@@ -183,6 +189,7 @@ flowchart LR
   - 确定性 priority；
   - 可选的人类可读短原因；
   - provenance，说明该规则由用户编写、由 Agentlink 随包提供，还是由维护工作流提出。
+- v1 `taskKinds`、positive signals、exclusions 和 preferences 必须引用 public task-hint schema 接受的同一组受控值。未知值会让 rule configuration invalid；不能静默按同义词归一化。
 - route rule 不能包含：
   - 任意 shell commands 或 executable callbacks；
   - credentials；
@@ -196,6 +203,8 @@ flowchart LR
 - 普通 router 不能调用 LLM、embedding service 或 remote search。
 - 它必须先应用硬性 eligibility checks，然后进行确定性 scoring 和 tie-breaking。
 - 相同的 task hints、route rules 和 live roster 必须得到相同的 selected preset。
+- 一个 canonical Runtime definition 必须生成或验证 MCP enums、route-rule schema、caller guidance 和 table tests。Caller packs 从这个 shared contract 学习词表，不需要用户的完整 rule file 或 plugin catalog。
+- 缺失 hints 归一化为文档化的中性默认值。未知字段或未知受控值以 typed routing-hint error 失败；v1 不静默接受任意字符串。
 - 大约一百条规则必须能通过普通内存过滤实际处理；v1 不要求 vector database 或 bitset index。
 
 ### FR-06：分阶段 fail-closed 启动
@@ -237,6 +246,7 @@ flowchart LR
 
 - 第一版实现必须至少区分：
   - automatic routing 未配置；
+  - task hints 对当前共享词表 invalid；
   - no eligible route；
   - route rule invalid；
   - selected preset not found；
@@ -259,12 +269,14 @@ flowchart LR
 - 普通 Runtime 不能为每个任务读取插件 README。
 - 维护工作流可以：
   - inventory live presets；
+  - 报告 roster-level `authorable` 和 `hasDocument` deployment facts，但不能把它们当作 route-safety evidence；
   - 检查用户授权的插件文件和文档；
   - 提出紧凑 route rules；
   - 验证 rule syntax 和 target existence；
   - 展示 diff；
   - 通过 bounded writer 应用用户批准的变更；
   - 诊断失败或退化的 rule。
+- Doctor 和 Host-status diagnostics 必须把 route configuration health 报告为 missing、valid 或 invalid，并在可用时带上有界 rule counts 和 target-preset problems。它们是只读的，不能修复 rule file 或 Host。
 - 维护工作流必须把第三方文档视为不可信输入。
 - 它不能执行任意 setup hooks，或在没有单独显式操作和用户授权的情况下修改 DSH Host 配置。
 
@@ -312,12 +324,14 @@ flowchart LR
 - 多个 Agentlink stdio 进程可以按现有架构定义，共享一个 state home 和 Host。
 - 由 Agentlink 维护工具执行的 route-rule 写入，必须使用有界、冲突感知、原子的本地文件更新行为。
 - Runtime reads 在 route 配置畸形时必须 fail closed，而不是猜测。
+- 同一个畸形 shared rule file 可能阻塞所有 caller process 中的自动路由，因此 doctor 和 Host status 必须直接暴露该配置失败，而不是让用户从反复出现的 `routing_config_invalid` 结果中推断。
 - 在当前 DSH APIs 下，roster-read-to-session-create 竞态无法消除；post-create verification 是必要缓解措施。
 
 ### NFR-05：兼容性
 
 - 路由功能不能要求新的长期分支或调用方专属 Runtime release。
 - 第一版实现必须记录测试过的 Agentlink、DSH Host、MCP SDK 和 caller versions。
+- DSH rc.7 已于 2026-08-17 发布。本设计使用的 `agentPreset`、`skill` 和 `session.create` release contracts 与已安装 rc.6 package 相同，但在常规 live compatibility suite 跑完前，rc.7 runtime behavior 仍未验证。
 - 这些已测试版本应写入运维验收证据或 release/compatibility notes；它们本身是诊断证据，不构成新的 runtime gate。
 - 未知 DSH 行为必须报告为 unverified，不能从一次本地运行泛化。
 - Host API additions，例如 capability lists、catalog revisions 或 change notifications，在 DSH 实现并测试前必须保持可选。
@@ -356,9 +370,12 @@ flowchart LR
   - 所有现有 bridge tests 继续通过。
 - 选择：
   - 代表性任务仅使用 route rules 和 task hints，确定性映射到预期 presets；
+  - MCP task-hint schema 和 route-rule validator 在 Codex 与 Claude Code 中接受同一组受控值；
+  - 缺失 hints 归一化为文档化的中性值，而未知字段或 enum values 返回 `routing_hints_invalid`；
   - tied scores 确定性解析；
   - 自动路由请求在没有配置 route rules 时返回 `routing_not_configured`，同时显式委派和 DSH-default 委派仍可使用；
   - malformed rules fail closed；
+  - doctor 或 Host status 区分报告 missing、valid 和 malformed route configuration；
   - absent 或 broken presets 永不被选择。
 - 启动：
   - bridge 在自动委派前读取 live roster；
@@ -385,6 +402,7 @@ flowchart LR
   - 验证创建的 sessions 仍在 DSH Web 可见；
   - 记录 selected preset、resolved preset、execution outcome、external test evidence 和任何 manual reselection；
   - 不把 DSH final message 本身当作任务成功证明。
+  - 在针对 rc.7 Host 完成 disposable-workspace live run 前，保持 rc.7 为 source-audited but runtime-unverified。
 
 ## 11. 最便宜的证伪器
 
@@ -415,7 +433,8 @@ flowchart LR
   - online self-tuning、shadow routing、success scoring 或 telemetry collection；
   - 任意 per-plugin task compilers 或 initialization hooks；
   - 修改运行中 session 的 Agent Preset；
-  - 新的 Agentlink Gateway、attach/resume 语义或另一套 task state machine；
+  - 把 DSH `sessionId` 或 `workspaceId` 暴露为新的 Agentlink Gateway、attach/resume 语义或另一套 task state machine 的捷径；
+  - route-file-defined 或 caller-specific core hint strings；未来 extension vocabulary 需要显式、有界的发现和分发设计；
   - 公开的 per-task model selector。
 - 只有当某个具体失败无法被当前 DSH facts、显式配置、version records、确定性 matching、types 或普通 tests 处理时，才重新考虑延后能力。
 
@@ -443,6 +462,7 @@ flowchart LR
   - Agent Preset 作为 v1 启动单位；
   - 新鲜 DSH roster read 和 post-create verification；
   - opt-in、确定性、无模型路由；
+  - 一组紧凑、Runtime-owned v1 task-hint vocabulary，通过 MCP schema 共享；
   - 不做静默 fallback，不增加新的安全权限。
 - 有意不冻结：
   - route-rule 文件的确切位置和语法；

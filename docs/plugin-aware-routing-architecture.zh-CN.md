@@ -41,7 +41,7 @@
 - 用于形成决策的评审角色：
   - 架构评审定义组件边界、数据所有权和兼容性；
   - 批判评审挑战事务性声明、fallback 安全、缓存、canary probe 和过度设计的 schema；
-  - 事实审计检查当前 Agentlink 代码和已安装 DSH rc.6 API 类型；
+  - 事实审计检查当前 Agentlink 代码、已安装 DSH rc.6 API 类型，以及下载的 rc.7 release contracts；
   - 需求评审区分当前行为、v1 义务和推迟的可能性。
 - 用户视角：
   - 用户希望自己的 DSH Harness 配置能被智能使用，而不是每个任务都手选 preset；
@@ -118,19 +118,26 @@
 
 ## 4. 当前事实与缺失事实
 
-- 已在 2026-08-18 针对已安装 DSH `0.1.0-rc.6` 类型表面验证：
-  - `agentPreset.list` 返回当前 roster，字段包括 id、trust、default state、description 和 broken state；
+- 截至 2026-08-19 的 release 和验证范围：
+  - 本次工作的已安装 CLI 和 live compatibility evidence 仍是 DSH `0.1.0-rc.6`；
+  - npm registry metadata 显示 [DSH `0.1.0-rc.7`](https://www.npmjs.com/package/@deepseek-ai/dsh/v/0.1.0-rc.7) 已于 2026-08-17 发布；
+  - 下载的 rc.7 `agent-presets`、`skills` 和 `sessions` contracts/schema 中，本设计依赖的部分与 rc.6 相同；
+  - 这个 source/package comparison 不声称 rc.7 runtime behavior 已通过 Agentlink 的 live acceptance suite。
+- 已验证的 DSH contract facts：
+  - `agentPreset.list` 返回当前 roster，per-preset 字段包括 id、trust、default state、description 和可选 `broken` reason，另有 roster-level `authorable` 和 `hasDocument` deployment facts；
   - `agentPreset.select` 只适用于空白 session，turn 开始后会 locked；
   - `agentPreset.read` 作为特权 composition read 存在，但热路径不需要；
   - `skill.list(sessionId)` 返回 session 范围内的 skill catalog，不会创建或恢复 agent；
   - `session.create` 接收可选 `agentPreset`，并在可用时返回 resolved preset；
+  - `session.create` 还接受预分配的 `sessionId`，并接受 `workspaceId` 或 `cwd` 至多一个；使用同一个 caller-owned id 和 cwd 重试是幂等创建路径，不同 cwd 则冲突；
   - preset discovery 会重新读取 roots，因此新的委派可以在没有 Agentlink catalog service 的情况下看到新增或删除。
+- 最后一条 `session.create` 事实不构成 Agentlink attach/resume contract。附着任意已有 DSH session 仍需要 task-mapping、workspace-claim、event-cursor、authorization 和 recovery 语义；参见[多调用方架构](caller-integration-architecture.zh-CN.md#102-attach--resume)。
 - 当前 Agentlink 事实：
   - `dsh_delegate` 已经接收可选 `agentPreset` 并转发给 `session.create`；
   - bridge 已负责任务映射、协作式 workspace claim、model-route checks、prompt submission、status、events、approvals、follow-up、cancellation 和 recovery；
   - DSH session/history 仍是内容权威来源；
   - routing rules、automatic selection 和 Task Route Records 还不存在。
-- DSH rc.6 当前未暴露的事实：
+- 当前检查过的 rc.6/rc.7 contract surface 未暴露的事实：
   - 通用的每 session 工具/能力清单；
   - 公共 preset-composition generation id；
   - preset-catalog revision 或 change notification；
@@ -242,6 +249,11 @@ flowchart TB
   - 自动请求返回 typed configuration error；
   - 自动请求在没有 route-rule 配置时返回 `routing_not_configured`；
   - 显式委派和 DSH-default 委派仍可独立使用。
+- 为 doctor 和 Host status 暴露有界的只读 health summary：
+  - `missing`、`valid` 或 `invalid` configuration state；
+  - valid 时可包含 rule count；
+  - 可用时包含 parse error code 和 missing/broken target ids；
+  - 不返回 route bodies、plugin documentation，不做 automatic repair，也不修改 Host。
 - 未来 Agentlink 自有 writer 必须使用受限 conflict detection 和 atomic replacement；Runtime 不执行来自插件的 writer callback。
 
 ### 6.4 Card Router
@@ -267,6 +279,8 @@ flowchart TB
 
 - 包装 DSH `agentPreset.list` 事实表面。
 - 只规范化 DSH 实际报告的字段。
+- 保留 wire-aligned 可选 `broken` reason，而不是发明 `brokenReason`。
+- 将 roster-level `authorable` 和 `hasDocument` 保持为 deployment diagnostics：它们不是 per-preset capabilities，也不影响 route eligibility。
 - 将 `trust` 保持为 provenance metadata，绝不转换成 permission guarantee。
 - 热路径不使用 `agentPreset.read`。
 - session 创建后可以使用 `skill.list` 做诊断，但不能把它当成通用 tool inventory 的替代品。
@@ -275,6 +289,7 @@ flowchart TB
 
 - 接收来自显式选择、自动路由或 DSH default 的 requested preset。
 - 调用现有 session-creation path 一次；非幂等创建不会自动重试。
+- 不把 DSH 可选的 `sessionId` 或 `workspaceId` 暴露为 attach/resume shortcut；v1 自动路由通过现有 cwd-based flow 创建新的 Agentlink task。
 - Session 创建后保存正常 task mapping 和初始 Task Route Record。
 - 检查 `session.create` 或 fresh session summary 返回的 preset。
 - selected 与 resolved 不匹配时，在 workspace claim 和真实 prompt 前停止，同时返回该未发送 prompt session 的 task/session 标识。
@@ -318,19 +333,69 @@ flowchart TB
 - 示例 normalized shape：
 
 ```ts
+interface LivePresetRoster {
+  presets: LivePresetFact[];
+  authorable: boolean;
+  hasDocument: boolean;
+}
+
 interface LivePresetFact {
   id: string;
   trust: "system" | "user";
   isDefault: boolean;
   name?: string;
   description?: string;
-  brokenReason?: string;
+  broken?: string;
 }
 ```
 
+- `broken` 是 DSH 提供的 reason，表示某 preset 当前无法 compose session。该 preset 仍可为管理用途可见，但 router 不能提供它。
+- `authorable` 表示 deployment 配置了可写入新 preset 的 root。`hasDocument` 表示 Host 能把 preset directory 交给 native opener。二者都不暴露 Host path，不描述某一个具体 preset，也不证明 routing safety。
 - 它只为一次 routing attempt 创建，不作为第二个 catalog source of truth 持久化。
 
-### 7.2 Route Rule
+### 7.2 Controlled Task Hints
+
+v1 热路径使用一组由 shared Runtime 拥有的紧凑词表：
+
+```ts
+type TaskKind =
+  | "implementation"
+  | "review"
+  | "debugging"
+  | "log-analysis"
+  | "research"
+  | "planning"
+  | "documentation"
+  | "testing"
+  | "general";
+
+type TaskSignal =
+  | "multi-file"
+  | "tests-required"
+  | "long-context"
+  | "large-logs"
+  | "evidence-required"
+  | "parallelizable";
+
+type RoutingPreference = "speed" | "balanced" | "quality" | "cost";
+
+interface TaskHints {
+  kind?: TaskKind;
+  signals?: TaskSignal[];
+  preference?: RoutingPreference;
+}
+```
+
+- 一个 canonical Runtime definition 必须供给 MCP schema、route-rule validation、generated caller guidance 和 tests。Codex、Claude Code 和后续调用方不定义自己的 aliases。
+- Agentlink release version 是该词表的 compatibility boundary；v1 不增加第二个 vocabulary version 字段，也不允许 route file 重定义它。
+- MCP schema 直接暴露这些 enums，因此调用方不需要读取 route file、preset roster 或 plugin documentation 就能形成有效请求。
+- 省略值归一化为 `kind="general"`、`signals=[]` 和 `preference="balanced"`。Signals 会按 public schema 去重并限制长度。
+- 未知 object fields 或 enum values 返回 `routing_hints_invalid`；v1 不做 lowercase、翻译、同义词映射，也不把任意字符串重新解释为 enum。
+- Route rules 只能引用同一组 core vocabulary，不能通过添加开放字符串扩展它。
+- 未来 plugin-specific vocabulary 需要单独设计 bounded discovery、namespacing、caller distribution、schema/version drift 和 context cost。在此之前，专用 presets 用 core values 描述或由用户显式选择。
+- Hints 只表达 task fit。它们不选择 model、不授予 authority、不证明 safety、不修改 workspace claim，也不改变 DSH sandbox、approval、network、credentials、tools 或 plugin state。
+
+### 7.3 Route Rule
 
 - 以下 shape 只是示例，刻意不是冻结的 public contract：
 
@@ -339,13 +404,13 @@ interface RouteRule {
   id: string;
   agentPreset: string;
   activation: {
-    taskKinds?: string[];
-    signals?: string[];
-    excludes?: string[];
+    taskKinds?: TaskKind[];
+    signals?: TaskSignal[];
+    excludes?: TaskSignal[];
   };
   routing?: {
     priority?: number;
-    preference?: "speed" | "balanced" | "quality";
+    preference?: RoutingPreference;
   };
   provenance: {
     source: "builtin" | "user" | "maintainer-proposal";
@@ -357,12 +422,13 @@ interface RouteRule {
 - 设计约束：
   - `agentPreset` 是 v1 唯一 launch operation；
   - `taskKinds`、`signals` 和 `excludes` 表达 routing fit，不表达 security facts；
+  - 每个 vocabulary value 都按共享 v1 enums 验证；未知 rule value 会让 configuration invalid，而不是变成 private caller dialect；
   - 除非有已证明的 route requirement 需要 eligibility constraint，否则 `workspaceClaimMode` 保持为 request-level Agentlink 字段；
   - 不包含任意 initialization 和 postcondition arrays；
   - 不包含 plugin docs 和 credentials；
   - 只有真实 preset 需要经过评审的 typed initialization，且超出 `agentPreset` 时，才提取独立 Launch Profile。
 
-### 7.3 Task Route Record
+### 7.4 Task Route Record
 
 ```ts
 interface TaskRouteRecord {
@@ -409,7 +475,9 @@ interface TaskRouteRecord {
   - 存在 `routing.mode=auto`，没有 `agentPreset`：自动 selection；
   - 两者都没有：当前 DSH-default 行为；
   - 两者都存在：因 authority ambiguous 返回 `invalid_request`；
+  - public automatic-routing input 不接受 `sessionId` 或 `workspaceId`；DSH wire 支持 preallocated creation 不等于 Agentlink attach/resume；
   - 不增加 `model` 字段。
+- 共享 MCP schema 携带上面的紧凑 hint enums。它不嵌入 route rules、live preset roster、plugin descriptions 或 dynamic per-user vocabulary。
 - 现有公开 MCP 字段可以继续叫 `workspaceMode`；本文使用“workspace claim mode”作为概念名称，避免把它误解为 DSH sandbox control。
 - 示例普通结果扩展：
 
@@ -474,8 +542,10 @@ sequenceDiagram
 ## 10. 确定性路由算法
 
 - 输入规范化：
-  - unknown task hints 按实现 schema 拒绝或忽略，绝不执行；
-  - 字符串只为匹配而规范化，不解释为命令；
+  - 省略值变为 `general`、no signals 和 `balanced`；
+  - unknown fields 或 values 返回 `routing_hints_invalid`，并带上受限 supported values；
+  - 不做 case folding、translation、synonym matching 或 free-form-to-enum coercion；
+  - signals 在匹配前去重并限制长度；
   - task hints 不能授予 permission。
 - Hard eligibility：
   - 目标 `agentPreset` 存在于 live roster；
@@ -569,6 +639,11 @@ flowchart LR
   - v1 每次自动调用都 fresh read；
   - 不需要 file watcher、TTL、`listChanged` 或 background poll；
   - missing file 可以表示“没有 configured auto routes”，而 malformed content 是 typed configuration error。
+- Route configuration health：
+  - doctor 和 `dsh_host_status` 将当前只读状态暴露为 missing、valid 或 invalid；
+  - valid health 可包含有界 rule count；invalid health 包含稳定 parse/validation code；
+  - live diagnosis 可以点名当前 missing 或 broken 的 target preset ids；
+  - health path 绝不修复文件、启动或重新配置 DSH，也不返回 documentation bodies。
 - Route-rule writing：
   - 初始阶段手动完成，或通过显式 maintainer command 完成；
   - programmatic writer 必须保留无关数据、检测冲突，并使用同目录 atomic replacement；
@@ -592,6 +667,7 @@ flowchart LR
 - 提议的 routing error vocabulary：
   - `routing_config_invalid`；
   - `routing_not_configured`；
+  - `routing_hints_invalid`；
   - `routing_request_ambiguous`；
   - `no_eligible_route`；
   - `preset_not_found`；
@@ -676,6 +752,7 @@ Existing Supervision Core
   - 证明 Agentlink 可以读取 live roster，并在没有 automatic selection 的情况下报告 requested/resolved presets。
 - Work：
   - 给 DSH adapter 增加 typed preset-list support；
+  - 保留 `broken`，并且只把 roster-level `authorable` / `hasDocument` 暴露为 diagnostics；
   - 在适当位置让 requested/resolved preset 在现有 delegate/status result 中可见；
   - 为 present、missing、broken 和 mismatched presets 增加 mock Host tests。
 - Risk：
@@ -683,6 +760,8 @@ Existing Supervision Core
 - Continue when：
   - supported/tested Host versions 返回足够事实；
   - mismatch 被证明会在 prompt 前停止。
+- Compatibility note：
+  - 对这组 fact surface，rc.7 已完成 source/package audit，但在针对 rc.7 Host 完成常规 disposable-workspace acceptance run 前，仍保持 live-unverified。
 - Backprop when：
   - resolved preset 无法可靠观察。
 
@@ -691,12 +770,14 @@ Existing Supervision Core
 - Priority：`must`
 - Dependencies：
   - Phase 1 facts；
-  - agreed minimal route-rule schema。
+  - shared v1 task-hint vocabulary 和 minimal route-rule schema。
 - Work：
   - 实现 fresh route-rule loading；
+  - 通过 MCP validation 和 generated caller guidance 发布同一组 controlled hint enums；
   - 实现 side-effect-free deterministic selection；
   - 使用互斥 auto/manual/default modes 扩展现有 delegation；
   - persist Task Route Record；
+  - 将 read-only route-configuration health 加入现有 doctor 和 `dsh_host_status` surfaces；
   - 返回 compact routing diagnostics。
 - Risk：
   - route choices 错误或 schema overfitting。
@@ -712,7 +793,7 @@ Existing Supervision Core
 - Dependencies：
   - 手写 v1 rules 的体验稳定。
 - Work：
-  - inventory 和 doctor commands；
+  - 超出 v1 route-health summary 的 richer inventory 和 maintainer-oriented doctor commands；
   - 从 authorized docs 生成 candidate-rule；
   - provenance 和 uncertainty display；
   - 通过 bounded writer 显式 diff/apply。
@@ -751,6 +832,8 @@ Existing Supervision Core
 - 本节说明如何证明[需求文档第 10 节](plugin-aware-routing-requirements.zh-CN.md#10-v1-验收标准)中的产品结果，不建立第二套需求。
 - Static and unit checks：
   - route schema 接收 supported data，并拒绝 executable/unknown shapes；
+  - MCP hints 和 route rules 接收同一组受控值；
+  - 省略 hints 得到中性默认值，unknown hint fields 或 values 返回 `routing_hints_invalid`；
   - hard filters 和 scoring 是 table-driven 且 deterministic；
   - explicit/manual/default modes 保持 distinct；
   - ties deterministic；
@@ -770,6 +853,9 @@ Existing Supervision Core
   - 无 routing request 保留 DSH-default behavior；
   - Codex 和 Claude integrations 使用同一个 MCP schema；
   - caller-specific setup code 不进入 routing logic。
+- Compatibility evidence：
+  - 分开记录 rc.6 live results 与 rc.7 source/package comparison；
+  - 在 operator acceptance suite 针对 rc.7 Host 通过前，不把 rc.7 提升为 live-tested support。
 - External-interference tests：
   - selection 后改变 mock roster，或让 creation 返回不同的 resolved preset；
   - 断言得到 mapped unprompted session、typed failure 和 `promptSent=false`；
