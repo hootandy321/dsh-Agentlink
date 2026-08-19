@@ -21,6 +21,9 @@
   - Agentlink 在本地选择 preset，验证实时 DSH 结果，然后启动 session；
   - 调用方继续通过现有 `dsh_*` 监督界面观察、继续、回答、审批、取消和释放任务；
   - 普通委派不会暴露完整插件目录，也不会消耗模型 token 反复阅读文档。
+- **长期方向与当前范围有别。**“Plugin-aware delegation”是长期方向；“Preset-aware routing v1”是当前范围。v1 在已经配置好的 DSH Agent Presets 中选择，并不致力于选择或加载插件。
+- v1 以可忽略的调用方上下文成本选择一个已配置的 DSH Agent Preset，验证实时启动，并保留监督；它不优化 preset-specific 任务简报。**Task Brief Policy 延后到实验。**
+- Core 从不解析自由文本 prompt。调用方模型输出 normalized hints。确定性只适用于相等的 normalized hints、rules 和 live roster。
 - 第一版实现必须刻意收窄：
   - 路由是显式启用的，并且兼容当前 `dsh_delegate` 行为；
   - 选择过程是确定性的，不调用另一个模型；
@@ -95,9 +98,12 @@ flowchart LR
   - Agentlink 内部的紧凑规则，把任务信号映射到现有 Agent Preset。
   - 它是编译后的知识，不是 README 摘要，也不是普通调用方模型上下文。
   - “Route Card” 是早期概念名称；v1 统一使用 `Route Rule` 作为正式数据对象名，`Card Router` 组件负责消费 Route Rules。
+  - v1 **closed typed hints**：`kind`、`scale`、`parallelism`、`evidence`、`optimizationIntent`。`optimizationIntent` 是 intent，不是性能保证。除非存在显式 catch-all rule，否则 `auto` 需要有效 hints；Meta Skill 不能发明信号。
 - **Task hint**
-  - 调用方可选提供的结构化信息，例如任务类型、所需证据、规模或并行偏好。
-  - v1 core values 是一组小型、由 Agentlink 拥有的受控词表，通过共享 MCP schema 暴露，并被所有调用方集成和 route-rule validator 原样消费。
+  - 调用方可选提供的结构化信息。v1 的 **closed typed hint set** 是 `kind`、`scale`、`parallelism`、`evidence`、`optimizationIntent`。
+  - **Core 从不解析自由文本 prompt。**调用方模型输出 **normalized hints**。确定性只适用于相等的 normalized hints、rules 和 live roster。
+  - `optimizationIntent` 是 **intent，不是性能保证**。**自动 hint 语义是非矛盾的**：普通缺失 hints 可以按文档归一化，但没有任何有效 hint 的自动路由必须失败，除非存在显式 catch-all rule；`auto` 需要有效 hints，除非存在显式 catch-all rule；**Meta Skill 不能发明信号**。
+  - v1 core values 是一组小型、由 Agentlink 拥有的受控词表（[受控词表](plugin-aware-routing-architecture.zh-CN.md#72-受控任务-hints)），通过共享 MCP schema 暴露，并被所有调用方集成和 route-rule validator 原样消费。
   - Route files 和调用方集成不能发明同义词或私有 core values；plugin-specific extension vocabulary 延后，直到它有有界的发现和分发契约。
   - 它不能授予权限或覆盖安全边界。
 - **Task Route Record**
@@ -166,6 +172,7 @@ flowchart LR
 - 现有带显式 `agentPreset` 的委派必须继续支持。
 - 不带 `agentPreset` 且不带显式自动路由请求的委派，必须保留当前 DSH-default 行为。
 - v1 中，自动路由必须要求显式 opt-in mode。
+- **`auto` 是每次委派显式请求（`routing.mode=auto`）；持久默认值延后。**
 - 同时提供显式 preset 和自动路由的请求必须以歧义失败，而不是静默选择其中一个。
 - 普通委派不能新增公开 model selector；model routing 仍由 DSH 拥有。
 - 虽然 DSH creation wire 接受预分配的 `sessionId`，并接受 `workspaceId` 或 `cwd` 之一，但自动路由必须使用 Agentlink 现有 new-task flow。在单独 coordination design 定义 task mapping、claims、event cursors、authorization 和 recovery 前，这些 wire fields 不能暴露为 attach/resume 参数。
@@ -189,7 +196,7 @@ flowchart LR
   - 确定性 priority；
   - 可选的人类可读短原因；
   - provenance，说明该规则由用户编写、由 Agentlink 随包提供，还是由维护工作流提出。
-- v1 `taskKinds`、positive signals、exclusions 和 preferences 必须引用 public task-hint schema 接受的同一组受控值。未知值会让 rule configuration invalid；不能静默按同义词归一化。
+- v1 使用封闭的类型化分类法，route rule 中的匹配与启动选择仅能引用五类受控值：kind、scale、parallelism、evidence、optimizationIntent。不允许任意插件自定义信号；未知值会让 rule configuration invalid，且不能静默按同义词归一化。
 - route rule 不能包含：
   - 任意 shell commands 或 executable callbacks；
   - credentials；
@@ -203,12 +210,18 @@ flowchart LR
 - 普通 router 不能调用 LLM、embedding service 或 remote search。
 - 它必须先应用硬性 eligibility checks，然后进行确定性 scoring 和 tie-breaking。
 - 相同的 task hints、route rules 和 live roster 必须得到相同的 selected preset。
+- 确定性限定在相等的 normalized hints、相等的 rules 和 live roster；它不延伸到自由文本 prompt 或模型生成的 prose。
+- **语义相等的候选产生 `ambiguous_route`；rule ids 只用于稳定地排列诊断。**`routing_request_ambiguous` 表示 manual + auto 冲突。active-file 中所有 rules 都是 active；确定性适用于同一 normalized hints 和 live roster 下的每一条被应用规则。
 - 一个 canonical Runtime definition 必须生成或验证 MCP enums、route-rule schema、caller guidance 和 table tests。Caller packs 从这个 shared contract 学习词表，不需要用户的完整 rule file 或 plugin catalog。
 - 缺失 hints 归一化为文档化的中性默认值。未知字段或未知受控值以 typed routing-hint error 失败；v1 不静默接受任意字符串。
 - 大约一百条规则必须能通过普通内存过滤实际处理；v1 不要求 vector database 或 bitset index。
 
 ### FR-06：分阶段 fail-closed 启动
 
+- **自动验证语义**（automatic）：缺失的 resolved preset 或 resolved mismatch 都会阻止真实 prompt；验证按情况为 `failed` / `unavailable`（当 Host 无法为自动选择暴露 resolved preset 时为 `unavailable`）。
+- **手动验证语义**（manual）：可观察的不匹配会阻止真实 prompt；只有无法观察 resolved preset 的 legacy Host 才能以 verification=unavailable 继续。Manual selection 标识为 manual，不呈现为自动决策。
+- **默认验证语义**（DSH-default）：不验证请求的 preset；在可观察时记录实际 resolved preset，不针对请求的 preset 做相等测试。
+- **Manual verification = unavailable 兼容性**：当 Host 无法暴露 resolved preset 时，manual selection 仍受支持且兼容（verification-unavailable），而 automatic selection fail closed。
 - Agentlink 不能声称选择和 Host 启动是事务性原子的。
 - 它必须使用分阶段流程：
   - 读取新鲜 roster；
@@ -244,6 +257,12 @@ flowchart LR
 
 ### FR-09：Typed failure diagnosis
 
+- **错误优先级：显式有序矩阵。**
+  - no matching rule -> `no_eligible_route`；
+  - 唯一最优匹配规则但目标缺失 -> `preset_not_found`；
+  - 唯一最优匹配规则但目标 broken -> `preset_broken`；
+  - 多个匹配候选但全都不可用 -> `no_eligible_route`，并带有有界的拒绝原因（每个 reason 按顺序是短的有界 code + 简短原因，不是整个候选列表）。
+- **Active rule files 与 candidates 有别。**Active rules 只存在于 active route file 中；candidates 单独存储，直到用户显式应用，否则永不影响 Runtime。`list-presets`、`route init`、`validate` 和 `doctor` 是非 AI helpers；`route init` 只输出带注释的 skeleton，不推断任何 rule。只有用户显式应用后 rules 才生效。
 - 第一版实现必须至少区分：
   - automatic routing 未配置；
   - task hints 对当前共享词表 invalid；
@@ -282,6 +301,10 @@ flowchart LR
 
 ### FR-12：路由元数据与重启诊断
 
+- **持久的 Task Route Record 生命周期，精确且无内容。**record 只存储：`selectionMode`、`routeRuleId?`、`requestedPreset?`、`resolvedPreset?`、`verification`（`not-required|verified|unavailable|failed`）、`launchStage`（`session-created|preset-verified|launch-failed|prompt-sent`）、`promptSent`、`failureCode?`、`recordedAt`。`launch-failed` 状态是终极协调失败；`dsh_status` 必须暴露它。初始 record 持久化在**实际 prompt 发送之前**是必需的；`dsh_status` 必须把 `launch-failed` 暴露为终极协调失败。
+- **初始 record 无法持久化就不发送 prompt**：如果已创建 session 的初始 Task Route Record 无法持久化，则不得继续 prompt delivery，从而保留一个未发送 prompt、可检查、可恢复的 session。
+- **priority 和有界拒绝原因**：错误有定义的优先级顺序和有界拒绝原因；见 FR-09。
+- **Phase 2.5 helpers 延后，是非 AI helpers，不是 v1 公开行为**：`list-presets`、`route init`、`validate`、`doctor`。它们不跑在普通委派热路径中，也不是 v1 公开 routing contract 的一部分。
 - 每个自动路由任务必须保留不含内容的元数据，足以回答：
   - 选择是 manual、DSH-default 还是 automatic；
   - 选择了哪条 rule 和哪个 preset；

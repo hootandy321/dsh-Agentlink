@@ -21,6 +21,9 @@
   - Agentlink selects a preset locally, verifies the live DSH result, and starts the session;
   - the caller continues to observe, follow up, answer, approve, cancel, and release the task through the existing `dsh_*` supervision surface;
   - normal delegation does not expose the complete plugin catalog or spend model tokens rereading documentation.
+- **Long-term direction and present scope are distinct.** "Plugin-aware delegation" is the long-term direction; "Preset-aware routing v1" is the present scope. v1 selects among already configured DSH Agent Presets; it does not aim to select or load plugins.
+- v1 selects a configured DSH Agent Preset with negligible caller-context cost, verifies live launch, and preserves supervision; it does not optimize preset-specific task briefs. **Task Brief Policy is deferred pending experiments.**
+- Core never parses free-text prompts. Caller models emit normalized hints. Determinism applies only to equal normalized hints, rules, and live roster.
 - The first implementation must be deliberately narrow:
   - routing is opt-in and compatible with the current `dsh_delegate` behavior;
   - selection is deterministic and does not call another model;
@@ -95,8 +98,11 @@ flowchart LR
   - A compact Agentlink-internal rule that maps task signals to an existing Agent Preset.
   - It is compiled knowledge, not a README summary and not normal caller-model context.
   - “Route Card” is the earlier conceptual name; v1 uses `Route Rule` as the formal data-object name. The `Card Router` component consumes Route Rules.
+  - v1 **closed typed hints**: `kind`, `scale`, `parallelism`, `evidence`, `optimizationIntent`. `optimizationIntent` is intent, not a performance guarantee. `auto` needs valid hints unless an explicit catch-all rule exists; the Meta Skill cannot invent signals.
 - **Task hint**
-  - Optional caller-provided structured information such as task kind, required evidence, scale, or parallelism preference.
+  - Optional caller-provided structured information. The **closed typed hint set** for v1 is `kind`, `scale`, `parallelism`, `evidence`, `optimizationIntent`.
+  - **Core never parses free-text prompts.** Caller models emit **normalized hints**. Determinism applies only to equal normalized hints, rules, and live roster.
+  - `optimizationIntent` is **intent, not a performance guarantee**. **Automatic hint semantics are non-contradictory**: ordinary missing hints may normalize as documented, but automatic routing without any valid hint must fail unless an explicit catch-all rule exists; `auto` needs valid hints unless an explicit catch-all rule exists; the **Meta Skill cannot invent signals**.
   - v1 core values are a small Agentlink-owned [controlled vocabulary](plugin-aware-routing-architecture.md#72-controlled-task-hints) exposed through the shared MCP schema and consumed unchanged by every caller integration and route-rule validator.
   - Route files and caller integrations must not invent synonyms or private core values; plugin-specific extension vocabulary is deferred until it has a bounded discovery and distribution contract.
   - It must not grant permissions or override safety boundaries.
@@ -166,6 +172,7 @@ flowchart LR
 - Existing delegation with an explicit `agentPreset` must remain supported.
 - Delegation without `agentPreset` and without an explicit automatic-routing request must preserve the current DSH-default behavior.
 - Automatic routing must require an explicit opt-in mode in v1.
+- **`auto` is explicitly requested per delegation with `routing.mode=auto`; a persistent default is deferred.**
 - A request that provides both an explicit preset and automatic routing must fail as ambiguous rather than silently choosing one.
 - Normal delegation must not gain a public model selector; model routing remains DSH-owned.
 - Although the DSH creation wire accepts a preallocated `sessionId` and either `workspaceId` or `cwd`, automatic routing must use Agentlink's existing new-task flow. Those wire fields must not be exposed as attach/resume parameters until a separate coordination design defines task mapping, claims, event cursors, authorization, and recovery.
@@ -203,11 +210,18 @@ flowchart LR
 - The normal router must not invoke an LLM, embedding service, or remote search.
 - It must first apply hard eligibility checks, then deterministic scoring and tie-breaking.
 - The same task hints, route rules, and live roster must yield the same selected preset.
+- Determinism is scoped to equal normalized hints, equal rules, and the live roster; it does not extend to free-text prompts or model-generated prose.
+- **Equal semantic candidates produce `ambiguous_route`; rule IDs only stably order diagnostics.** `routing_request_ambiguous` means manual + auto conflict. All active-file rules are active; determinism applies across every applied rule for the same normalized hints and live roster.
 - One canonical Runtime definition must generate or validate the MCP enums, route-rule schema, caller guidance, and table tests. Caller packs learn the vocabulary from that shared contract and never need the user's complete rule file or plugin catalog.
 - Missing hints normalize to the documented neutral defaults. Unknown fields or unknown controlled values fail with a typed routing-hint error; v1 does not silently accept arbitrary strings.
 - Approximately one hundred rules must remain practical with ordinary in-memory filtering; v1 does not require a vector database or bitset index.
 
 ### FR-06: Staged fail-closed launch
+
+- **Automatic verification semantics** (automatic): a missing resolved preset OR a resolved mismatch blocks the real prompt; verification = `failed` / `unavailable` as appropriate (`unavailable` when the Host cannot expose the resolved preset for an automatic selection).
+- **Manual verification semantics** (manual): an observable mismatch blocks the real prompt; only a legacy Host that cannot observe a resolved preset may continue with verification=unavailable. Manual selection is identified as manual, not presented as an automatic decision.
+- **Default verification semantics** (DSH-default): no requested preset is verified; record the actual resolved preset when observable, with no equality test against a requested preset.
+- **Manual verification = unavailable compatibility**: where the Host cannot expose a resolved preset, manual selection remains supported and compatible (verification-unavailable), whereas automatic selection fails closed.
 
 - Agentlink must not claim that selection and Host launch are transactionally atomic.
 - It must use a staged flow:
@@ -244,6 +258,12 @@ flowchart LR
 
 ### FR-09: Typed failure diagnosis
 
+- **Error priority: explicit ordered matrix.**
+  - no matching rule -> `no_eligible_route`;
+  - uniquely best matching rule with absent target -> `preset_not_found`;
+  - uniquely best matching rule with broken target -> `preset_broken`;
+  - multiple matching candidates, all unavailable -> `no_eligible_route` plus bounded rejection reasons (each reason in that order is a short bounded code + brief reason, not the whole candidate list).
+- **Active rule files vs candidates** are distinct. Active rules live only in the active route file; candidates are stored separately and never influence the Runtime until a user explicitly applies them. `list-presets`, `route init`, `validate`, and `doctor` are non-AI helpers; `route init` emits only a commented skeleton and no inferred rule. Rules are effective only once the user explicitly applies them.
 - The first implementation must distinguish at least:
   - automatic routing not configured;
   - task hints invalid for the current shared vocabulary;
@@ -282,6 +302,10 @@ flowchart LR
 
 ### FR-12: Route metadata and restart diagnosis
 
+- **Durable Task Route Record lifecycle**, precise and content-free. The record stores only: `selectionMode`, `routeRuleId?`, `requestedPreset?`, `resolvedPreset?`, `verification` (`not-required|verified|unavailable|failed`), `launchStage` (`session-created|preset-verified|launch-failed|prompt-sent`), `promptSent`, `failureCode?`, `recordedAt`. The `launch-failed` state is terminal coordination failure; `dsh_status` must surface it. Initial record persistence is required **before** the actual prompt is sent; `dsh_status` must surface `launch-failed` as terminal coordination failure.
+- **Do not prompt if the initial record cannot persist**: prompt delivery must not proceed if the initial Task Route Record for the created session cannot persist, so an unprompted, inspectable, recoverable session is retained.
+- **priority and bounded rejection reasons**: errors have a defined priority order and bounded rejection reasons; see FR-09.
+- **Phase 2.5 helpers are deferred, non-AI helpers, not v1 public behavior**: `list-presets`, `route init`, `validate`, `doctor`. They do not run in the ordinary delegation hot path and are not part of v1's public routing contract.
 - Each automatically routed task must retain content-free metadata sufficient to answer:
   - whether selection was manual, DSH-default, or automatic;
   - which rule and preset were selected;
@@ -421,9 +445,17 @@ flowchart LR
   - a required safety property depends on untrusted plugin prose.
 - A falsifier result should backpropagate to architecture rather than trigger more hashes, caches, embeddings, or prompt text.
 
+### Falsifier A/B/C
+
+- **Falsifier A**: default + raw caller prompt (the current explicit-preset/DSH-default baseline).
+- **Falsifier B**: specialized preset + raw caller prompt.
+- **Falsifier C**: specialized preset + a **human-made structured brief**, not an implemented Task Brief Policy.
+- A **B-to-C material gain** (measured on a disposable workspace against real presets) triggers **reconsidering the constrained Task Brief Policy**, not a widening of control-vocabulary enums.
+
 ## 12. Non-goals and deferred capabilities
 
 - Not in v1:
+  - **Task Brief Policy is deferred pending experiments.**
   - automatic plugin installation or Host profile repair;
   - automatic canary sessions in normal delegation;
   - generic tool/capability attestation;

@@ -7,11 +7,11 @@
 - Goal reference: [Plugin-aware DSH routing requirements](plugin-aware-routing-requirements.md)
 - Current-runtime reference: [Architecture and safety model](architecture.md)
 - Caller-extension reference: [Multi-caller extension architecture](caller-integration-architecture.md)
-- Scope: a caller-neutral routing layer that selects an already configured DSH Agent Preset before creating a new supervised task.
+- Scope: the first v1 of **Preset-aware routing** (current scope) inside the shared Runtime: a caller-neutral routing layer that chooses and validates an already configured DSH Agent Preset before creating a new supervised task. The broader **Plugin-aware delegation** long-term direction remains the guiding frame but is not v1.
 
 ## 1. Decision summary
 
-- Agentlink will add plugin-aware routing inside the shared Runtime, not inside individual Caller Integration Packs.
+- **Preset-aware routing v1** is the current scope: Agentlink will choose an already configured DSH Agent Preset inside the shared Runtime, not inside individual Caller Integration Packs. **Plugin-aware delegation** is the long-term direction; v1 deliberately does not optimize task briefs, infer plugin capabilities from prose, or manage plugins.
 - The normal path will use an internal deterministic Card Router:
   - it receives the task plus optional compact hints;
   - it reads current local route rules and the live DSH preset roster;
@@ -26,11 +26,12 @@
   - **Route Rule**: compact internal matching and preset-selection data;
   - **Task Route Record**: content-free metadata describing the selection and resolved outcome.
 - A separate persistent Plugin Manifest, Launch Profile, capability graph, catalog cache, or immutable hash snapshot is deferred until a concrete integration proves it necessary.
+- v1 chooses and validates a configured Agent Preset; it does **not** optimize the task brief. A constrained **Task Brief Policy** (bounded rewriting or brief shaping inside the Runtime) is deferred to experiments and is out of v1 scope.
 - Implementation starts with Phase 1 facts only: add typed preset discovery and requested/resolved preset reporting before automatic selection.
 - Public compatibility is preserved:
   - explicit `agentPreset` remains manual selection;
   - no explicit preset and no automatic-routing opt-in retains current DSH-default behavior;
-  - automatic routing is an additive mode of the existing delegation use case;
+  - automatic routing is an additive, explicitly per-request mode of the existing delegation use case (persistent routing defaults are deferred);
   - ordinary delegation still has no per-task model parameter.
 
 ## 2. Architecture route and review perspectives
@@ -38,6 +39,9 @@
 - Artifact route:
   - this is a code/product architecture specification over the existing Node.js MCP Runtime and DSH backend;
   - it is not a new caller integration, a DSH plugin packaging spec, or a user-interface design.
+- Two names are used with distinct meanings:
+  - **Preset-aware routing v1** (current scope): choose and validate an existing configured Agent Preset; never rewrite the task brief.
+  - **Plugin-aware delegation** (long-term direction): the eventual, speculative frame that assumes broader plugin integration. Its Task Brief Policy debate is out of v1.
 - Review roles used to shape the decision:
   - architecture review defined component boundaries, data ownership, and compatibility;
   - critic review challenged transactional claims, fallback safety, caching, canary probing, and over-designed schemas;
@@ -115,6 +119,11 @@
   - the same shared router cannot serve Codex and Claude Code;
   - safety decisions would need to trust plugin prose.
 - Do not respond to a failed falsifier by automatically adding hashes, embeddings, caches, more prompt text, or self-tuning.
+- Live validation compares three delegation shapes so routing improves only from observed handling, never from a presumed brief rewrite:
+  - **A**: DSH **default** preset with the raw, unmodified task text;
+  - **B**: a **specialized** preset with the raw, unmodified task text;
+  - **C**: the same specialized preset with a human-made compact structured brief.
+- Only a **material B→C improvement** (measured across the falsifier tasks) is the trigger to evaluate a constrained Task Brief Policy; absence of an improvement keeps the Runtime brief-free.
 
 ## 4. Current facts and missing facts
 
@@ -239,7 +248,7 @@ flowchart TB
 
 ### 6.3 Route Rule reader
 
-- Reads a small local declarative rule set.
+- Reads the small **active rule store** (only applied, validated rules; see 6.9).
 - v1 should reread the rule set for each automatic delegation:
   - file I/O for roughly one hundred compact rules is cheap;
   - this keeps user changes visible across long-lived caller processes;
@@ -252,17 +261,18 @@ flowchart TB
 - Exposes a bounded read-only health summary for doctor and Host status:
   - `missing`, `valid`, or `invalid` configuration state;
   - rule count when valid;
-  - parse error code and missing/broken target ids when available;
+  - parse error code and live-preset-eligibility gaps (missing/broken target ids) when available;
   - no route bodies, plugin documentation, automatic repair, or Host mutation.
-- A future Agentlink-owned writer must use bounded conflict detection and atomic replacement; the Runtime does not execute writer callbacks from a plugin.
+- The reader reads only the **active rule store**; it never reads candidates or proposals.
+- Only an explicit apply moves a candidate into the active store; the Runtime never auto-applies a candidate and executes no writer callback from a plugin.
 
 ### 6.4 Card Router
 
 - Accepts:
-  - normalized task hints;
+  - RoutingHints (typed, finite);
   - requested workspace claim mode;
-  - current route rules;
-  - current live preset roster.
+  - active route rules (never candidates);
+  - live preset roster.
 - Produces:
   - selected rule id;
   - requested Agent Preset;
@@ -271,7 +281,8 @@ flowchart TB
 - Does not:
   - call DSH mutation APIs;
   - call an LLM or embedding service;
-  - read documentation;
+  - read documentation or proposals;
+  - read or apply candidate rules;
   - change model, permissions, approval, sandbox, network, or credentials;
   - automatically fall back in v1.
 
@@ -290,10 +301,12 @@ flowchart TB
 - Receives the requested preset from explicit selection, automatic routing, or no preset for DSH default.
 - Calls the existing session-creation path once; non-idempotent creation is not automatically retried.
 - Does not expose DSH's optional `sessionId` or `workspaceId` as an attach/resume shortcut; v1 automatic routing creates a new Agentlink task through the existing cwd-based flow.
-- Saves the normal task mapping and an initial Task Route Record after session creation.
-- Checks the preset returned by `session.create` or the fresh session summary.
-- Stops before workspace claim and the real prompt on a selected-versus-resolved mismatch, while returning the task/session identifiers for the unprompted session.
-- Treats an unobservable resolved preset as unsupported for automatic routing on that Host version; manual and DSH-default compatibility remain governed by their existing behavior.
+- Persists the normal task mapping **and** the initial Task Route Record atomically together after session creation; an initial persistence failure stops before any claim or prompt.
+- Runs a first resolved-preset check against the preset returned by `session.create` or the fresh session summary.
+- Runs claim and model-route checks next, then immediately re-reads the resolved preset and runs a second equality check right before `session.prompt`.
+- The final check-to-prompt window is an irreducible TOCTOU (see the hot-path sequence); the desired future is a DSH `expectedPreset`/generation condition on the prompt, with no local composition hash.
+- Stops before the real prompt on an automatic mismatch or unobservable preset, while returning the task/session identifiers for the unprompted session.
+- Treats an unobservable resolved preset as unsupported for automatic routing on that Host version; manual and DSH-default behavior follow requirement 9's exact rules.
 - Preserves the current behavior when workspace claim acquisition races after session creation:
   - retain the unprompted task/session mapping;
   - return the conflict and recovery information;
@@ -325,6 +338,22 @@ flowchart TB
   - auto-publish changes;
   - change a running session's preset.
 
+### 6.9 Active rule store vs candidate/proposal store
+
+- There are two distinct local stores:
+  - **active rule store**: the single source the hot-path router reads; it contains only explicitly applied, validated rules;
+  - **candidate/proposal store**: proposed, generated, or maintainer-drafted rules that are not yet active.
+- Applying a candidate moves it (as bounded data, after explicit user authorization) into the active rule store; no candidate ever affects the hot path until it has been applied.
+
+### 6.10 Phase 2.5 non-AI maintainer helpers
+
+- Small **non-AI**, deferred helpers make the two-store split usable without a model:
+  - `list-presets`: enumerate the live roster read-only;
+  - `route init`: scaffold an empty active rule store;
+  - `route validate`: check a candidate's schema and live target existence without touching the active store;
+  - `route doctor`: read-only health diagnostics over both stores.
+- These remain deferred, non-AI cold-path commands; they are not part of the v1 hot path and no candidate affects the hot path.
+
 ## 7. v1 logical data model
 
 ### 7.1 Live Preset Roster
@@ -353,9 +382,9 @@ interface LivePresetFact {
 - `authorable` means the deployment has a configured root where a new preset can be written. `hasDocument` means the Host can hand a preset directory to a native opener. Neither exposes a Host path, describes one specific preset, nor proves routing safety.
 - The roster is created for one routing attempt and is not persisted as a second catalog source of truth.
 
-### 7.2 Controlled Task Hints
+### 7.2 RoutingHints
 
-The v1 hot path uses one compact vocabulary owned by the shared Runtime:
+The v1 hot path uses one compact vocabulary owned by the shared Runtime. RoutingHints are **runtime-owned finite types**: the Core does not inspect or reinterpret any free-text field.
 
 ```ts
 type TaskKind =
@@ -369,31 +398,42 @@ type TaskKind =
   | "testing"
   | "general";
 
-type TaskSignal =
-  | "multi-file"
-  | "tests-required"
-  | "long-context"
-  | "large-logs"
-  | "evidence-required"
-  | "parallelizable";
+type TaskScale =
+  | "small"
+  | "medium"
+  | "large"
+  | "huge";
 
-type RoutingPreference = "speed" | "balanced" | "quality" | "cost";
+type Parallelism = "none" | "low" | "medium" | "high" | "explicit";
 
-interface TaskHints {
+type Evidence =
+  | "none-required"
+  | "local-verification"
+  | "review-required"
+  | "external-evidence";
+
+type OptimizationIntent = "speed" | "balanced" | "quality" | "cost";
+
+interface RoutingHints {
   kind?: TaskKind;
-  signals?: TaskSignal[];
-  preference?: RoutingPreference;
+  scale?: TaskScale;
+  parallelism?: Parallelism;
+  evidence?: Evidence;
+  optimizationIntent?: OptimizationIntent;
 }
 ```
 
+- The five fields are the complete finite vocabulary. The Core reads only these typed values; it never inspects free-text task prose to invent an open signal.
+- Automatic mode requires **at least one valid supplied hint dimension** unless an active catch-all rule explicitly covers the delegation. An automatic request with no valid supplied hint dimension and without an active catch-all fails closed (never guessed).
+- Because a caller model may translate the same natural-language task into different hint tuples, there is **no guarantee that equal prose yields equal hints**. The deterministic guarantee is only: equal normalized hints + equal active rules + equal live roster produce the same route selection.
+- No open signal invention: callers, rule files, and Core all reference only the typed vocabulary; nothing invents a new signal string at task time.
 - One canonical Runtime definition must feed the MCP schema, route-rule validation, generated caller guidance, and tests. Codex, Claude Code, and later callers do not define their own aliases.
 - The Agentlink release version is the compatibility boundary for this vocabulary; v1 does not add a second vocabulary version field or let a route file redefine it.
 - The MCP schema exposes these enums directly, so the caller does not need to read the route file, preset roster, or plugin documentation to form a valid request.
-- Omitted values normalize to `kind="general"`, `signals=[]`, and `preference="balanced"`. Signals are deduplicated and bounded by the public schema.
 - Unknown object fields or enum values return `routing_hints_invalid`; v1 does not lowercase, translate, synonym-map, or reinterpret arbitrary strings.
 - Route rules may reference only the same core vocabulary. They cannot extend it by adding open strings.
 - A future plugin-specific vocabulary requires a separate design for bounded discovery, namespacing, caller distribution, schema/version drift, and context cost. Until then, specialized presets are described using the core values or selected explicitly.
-- Hints express task fit only. They do not select a model, grant authority, prove safety, alter the workspace claim, or change DSH sandbox, approval, network, credentials, tools, or plugin state.
+- RoutingHints express task fit only. They do not select a model, grant authority, prove safety, alter the workspace claim, or change DSH sandbox, approval, network, credentials, tools, or plugin state.
 
 ### 7.3 Route Rule
 
@@ -403,26 +443,26 @@ interface TaskHints {
 interface RouteRule {
   id: string;
   agentPreset: string;
-  activation: {
-    taskKinds?: TaskKind[];
-    signals?: TaskSignal[];
-    excludes?: TaskSignal[];
+  priority: number;
+  matches: {
+    kind?: TaskKind;
+    kinds?: TaskKind[];
+    scale?: TaskScale;
+    parallelism?: Parallelism;
+    evidence?: Evidence;
+    optimizationIntent?: OptimizationIntent;
+    excludes?: (TaskKind | TaskScale)[];
   };
-  routing?: {
-    priority?: number;
-    preference?: RoutingPreference;
-  };
-  provenance: {
-    source: "builtin" | "user" | "maintainer-proposal";
-  };
+  catchAll?: boolean;
+  source: "builtin" | "user";
   reason?: string;
 }
 ```
 
 - Design constraints:
   - `agentPreset` is the only v1 launch operation;
-  - `taskKinds`, `signals`, and `excludes` express routing fit, not security facts;
-  - every vocabulary value is validated against the shared v1 enums; an unknown rule value makes the configuration invalid rather than becoming a private caller dialect;
+  - every match value is validated against the shared v1 enums; an unknown rule value makes the configuration invalid rather than becoming a private caller dialect;
+  - `catchAll` is an explicit rule that covers an automatic request lacking a valid hint; without an active catch-all such a request fails closed;
   - `workspaceClaimMode` stays a request-level Agentlink field unless a demonstrated route requirement needs an eligibility constraint;
   - arbitrary initialization and postcondition arrays are absent;
   - plugin docs and credentials are absent;
@@ -430,18 +470,39 @@ interface RouteRule {
 
 ### 7.4 Task Route Record
 
+The exact content-free shape:
+
 ```ts
+type VerificationState =
+  | "not-required"     // no equality check performed (DSH default)
+  | "verified"         // requested == resolved observed, or manual match
+  | "unavailable"      // resolved preset unobservable (manual: legacy continue; automatic: fail closed)
+  | "failed";          // mismatch of requested vs resolved, recorded with a failureCode
+
+type LaunchStage =
+  | "session-created"
+  | "preset-verified"
+  | "launch-failed"
+  | "prompt-sent";
+
 interface TaskRouteRecord {
   taskId: string;
   selectionMode: "dsh-default" | "manual" | "automatic";
   routeRuleId?: string;
   requestedPreset?: string;
   resolvedPreset?: string;
-  verification: "verified" | "partial" | "failed";
-  reasonCode?: string;
-  recordedAt: string;
+  verification: VerificationState;
+  launchStage: LaunchStage;
+  promptSent: boolean;
+  failureCode?: string;
+  failureReason?: string;
+  recordedAt: string; // ISO timestamp when the initial record was persisted
 }
 ```
+
+- Lifecycle: the initial record is persisted atomically with the task mapping at `launchStage="session-created"`. As the launcher proceeds the record is updated in place; at the end of the launch it is terminal with `launchStage` and `promptSent` reflecting the actual outcome. `launchStage="launch-failed"` plus `promptSent=false` is the terminal **launch-failed** coordination state. There are no intermediate public launch stages: the only observable stages are `session-created`, `preset-verified`, `launch-failed`, and `prompt-sent`. A requested-vs-resolved mismatch is not a separate enum value: it is `verification="failed"` with the concrete `failureCode` recorded.
+
+- `dsh_status` must render the launch-failed terminal coordination state (`promptSent=false`, non-empty `failureCode`) as a typed failure rather than starting a blank session. `dsh_host_status` does not report this per-task terminal coordination state.
 
 - The record intentionally omits:
   - prompt, response, tool, question, or approval bodies;
@@ -461,10 +522,12 @@ interface TaskRouteRecord {
   "workspaceMode": "exclusive-write",
   "routing": {
     "mode": "auto",
-    "taskHints": {
+    "hints": {
       "kind": "implementation",
-      "signals": ["multi-file", "tests-required"],
-      "preference": "speed"
+      "scale": "large",
+      "parallelism": "high",
+      "evidence": "local-verification",
+      "optimizationIntent": "speed"
     }
   }
 }
@@ -472,9 +535,10 @@ interface TaskRouteRecord {
 
 - Compatibility rules:
   - `agentPreset` present, no `routing.mode=auto`: manual preset selection;
-  - `routing.mode=auto` present, no `agentPreset`: automatic selection;
+  - explicit per-request `routing.mode=auto` present, no `agentPreset`: automatic selection for this request only;
   - neither present: current DSH-default behavior;
-  - both present: `invalid_request` due to ambiguous authority;
+  - both present: `routing_request_ambiguous` due to ambiguous authority;
+  - automatic selection is always an explicit per-request opt-in; persistent routing defaults (a stored default mode) are deferred and are not a v1 input;
   - public automatic-routing input does not accept `sessionId` or `workspaceId`; DSH wire support for preallocated creation does not define Agentlink attach/resume;
   - no `model` field is added.
 - The shared MCP schema carries the compact hint enums above. It does not embed route rules, the live preset roster, plugin descriptions, or a dynamic per-user vocabulary.
@@ -490,7 +554,7 @@ interface TaskRouteRecord {
     "requestedPreset": "router-standard",
     "resolvedPreset": "router-standard",
     "verification": "verified",
-    "reasonCode": "task_kind_and_signals"
+    "reasonCode": "matched_kind_scale_parallelism"
   }
 }
 ```
@@ -512,27 +576,34 @@ sequenceDiagram
     participant H as DSH Host
     participant S as Existing Supervisor
 
-    C->>B: dsh_delegate(task, routing=auto)
+    C->>B: dsh_delegate(task, routing.mode=auto, hints)
     B->>B: Read and validate current Route Rules
     B->>H: agentPreset.list
     H-->>B: Live Preset Roster
-    B->>R: select(taskHints, rules, roster)
+    B->>R: select(hints, rules, roster)
     R-->>B: ruleId + requestedPreset + reason
     B->>H: session.create(cwd, agentPreset)
     H-->>B: sessionId + resolved agentPreset
-    B->>S: Persist task mapping + initial route metadata
-    B->>B: Verify requested == resolved
-    alt mismatch or missing fact required by policy
+    B->>S: Atomically persist task mapping + initial Task Route Record
+    B->>B: First resolved-preset check (requested vs resolved)
+    alt mismatch or unobservable (automatic) or initial persistence failed
         B-->>C: Typed failure + task/session ids; claim and real prompt not issued
-    else verified
+    else first check passes
         B->>S: Acquire workspace claim
         S->>H: Read live model route / perform existing checks
-        S->>H: session.prompt(real task)
-        S-->>C: taskId + compact routing digest
+        B->>H: Re-read resolved preset immediately before prompt
+        B->>B: Second equality check (requested vs re-read resolved)
+        alt second check fails
+            B-->>C: Typed failure + task/session ids; prompt not issued
+        else second check passes
+            S->>H: session.prompt(real task)
+            S-->>C: taskId + compact routing digest
+        end
     end
 ```
 
-- “Verify requested == resolved” is a post-create safety check, not a transaction.
+- The two equality checks are the launch safety net, not a transaction. **Initial Task Route Record persistence failure or an automatic mismatch/unobservable preset stops before prompt.**
+- The final check-to-`session.prompt` window is an **irreducible TOCTOU**: Agentlink still cannot atomically bind the observed preset to the subsequent prompt. The desired future is a DSH `expectedPreset`/generation condition carried into `session.prompt`; until DSH offers it, the second re-read is the narrow mitigation and no local composition hash is used as a Host transaction boundary.
 - A route-rule change after the current call parsed its rule does not mutate the in-flight decision:
   - the current call uses its parsed rule value and verifies the actual preset;
   - the next call rereads the rule file;
@@ -542,28 +613,19 @@ sequenceDiagram
 ## 10. Deterministic routing algorithm
 
 - Input normalization:
-  - omitted values become `general`, no signals, and `balanced`;
-  - unknown fields or values return `routing_hints_invalid` with the bounded supported values;
-  - no case folding, translation, synonym matching, or free-form-to-enum coercion occurs;
-  - signals are deduplicated and bounded before matching;
-  - task hints cannot grant permission.
-- Hard eligibility:
-  - target `agentPreset` exists in the live roster;
-  - target is not reported broken;
-  - rule is enabled and syntactically valid;
-  - exclusion signals do not match;
-  - any explicitly supported Host-version constraint is satisfied;
-  - no rule requires a safety effect that Agentlink cannot verify or authorize.
-- Soft scoring:
-  - exact task-kind match;
-  - positive signal matches;
-  - configured priority;
-  - optional speed/balanced/quality preference when the rule explicitly supports it.
-- Tie-breaking:
-  - higher hard/soft match score;
-  - higher explicit priority;
-  - more exact signal matches;
-  - lexicographically smaller rule id as the final deterministic tie-break.
+  - RoutingHints fields are already typed and validated; there is no free-text to inspect;
+  - automatic mode requires at least one valid supplied hint dimension; v1 does not silently default an automatic request to a generic hint without an active catch-all.
+
+- All rules in the active route file are active (there is no separate enable toggling within it). Matching is a two stage process.
+
+- **Stage 1 eligibility** — a rule is eligible when its target preset exists in the live roster, is not reported broken, the rule is syntactically valid, exclusion values do not match, any Host-version constraint is satisfied, and no rule requires a safety effect Agentlink cannot verify or authorize.
+
+- **Stage 2 semantic rank** — eligible rules are ranked by:
+  1. **kind specificity**: a rule matching the exact requested kind ranks above a rule matching a broader kind set that still contains it;
+  2. **positive matching evidence/signal count**: the number of additional typed fields (`scale`, `parallelism`, `evidence`, `optimizationIntent`) on the rule that equal the request;
+  3. **explicit priority**: a higher configured `priority` value wins among otherwise equal matches.
+
+- Equal semantic tuples (same kind specificity, same positive field count, same priority) produce **`ambiguous_route`**; the rule `id` is used only as a stable diagnostic order, never to decide an ambiguous tie.
 - No-match behavior:
   - return `no_eligible_route` with bounded reason codes;
   - do not silently use the DSH default;
@@ -571,7 +633,7 @@ sequenceDiagram
 - Confidence:
   - v1 does not need a numeric probability;
   - a result can report a small enum such as `exact`, `ranked`, or `ambiguous` if tests show it helps;
-  - ambiguous ties may fail for clarification rather than exposing every card.
+  - an ambiguous tie fails with `ambiguous_route` rather than exposing every card.
 
 ## 11. Trust, capabilities, and safety effects
 
@@ -637,8 +699,10 @@ flowchart LR
   - DSH history owns conversation content.
 - Route-rule reading:
   - fresh per automatic call in v1;
+  - the hot path reads only the **active rule store**, never the candidate/proposal store;
   - no file watcher, TTL, `listChanged`, or background poll required;
-  - a missing file may mean “no configured auto routes,” while malformed content is a typed configuration error.
+  - a missing active store may mean “no configured auto routes,” while malformed content is a typed configuration error;
+  - no candidate or proposal affects the hot path.
 - Route configuration health:
   - doctor and `dsh_host_status` expose the current read-only state as missing, valid, or invalid;
   - valid health may include a bounded rule count; invalid health includes a stable parse/validation code;
@@ -646,16 +710,18 @@ flowchart LR
   - the health path never repairs the file, starts or reconfigures DSH, or returns documentation bodies.
 - Route-rule writing:
   - initially manual or through an explicit maintainer command;
+  - proposals and generated candidates live in a **separate candidate/proposal store** until explicitly applied;
   - a programmatic writer must preserve unrelated data, detect conflicts, and use an atomic same-directory replacement;
-  - no plugin-provided arbitrary writer callback.
+  - no plugin-provided arbitrary writer callback;
+  - only an explicit apply moves a candidate into the active store.
 - Multiple caller processes:
   - each process performs its own fresh read and DSH discovery;
   - each process shares the existing task, claim, and ledger state home;
   - no singleton router or Gateway is required.
 - TOCTOU:
   - `agentPreset.list -> session.create` cannot be made atomic by Agentlink;
-  - post-create preset verification is the narrow mitigation;
-  - a future DSH generation id could improve diagnosis but is not simulated with a local hash.
+  - the final check-to-`session.prompt` window is an irreducible TOCTOU;
+  - a future DSH generation id (**`expectedPreset`/generation condition carried into the prompt**) is the desired mitigation but is not simulated with a local hash.
 - Task Route Record persistence:
   - must use the same fail-closed local-filesystem assumptions as other coordination state;
   - must not be treated as a DSH content or capability source;
@@ -668,19 +734,34 @@ flowchart LR
   - `routing_config_invalid`;
   - `routing_not_configured`;
   - `routing_hints_invalid`;
-  - `routing_request_ambiguous`;
+  - `ambiguous_route`;
   - `no_eligible_route`;
   - `preset_not_found`;
   - `preset_broken`;
   - `resolved_preset_mismatch`;
   - `routing_verification_unavailable` when the Host cannot expose the resolved preset required by automatic routing;
   - existing `host_unreachable`, workspace conflict, model-route, and prompt errors remain distinct.
+
+- Error priority matrix — when several conditions co-occur, only the highest-priority error is reported:
+  1. **no matching rule** (including no active catch-all for a hint-less automatic request): `no_eligible_route`;
+  2. **unique best target missing**: `preset_not_found`;
+  3. **unique best target broken**: `preset_broken`;
+  4. **multiple matching candidates all unavailable** with bounded per-candidate rejection reasons: `no_eligible_route` with bounded reasons.
+
+- `routing_not_configured` is reserved for absent or invalid routing configuration, not for a first matrix result. It is not used when the only problem is that no rule matches.
+
+- `routing_request_ambiguous` is reserved exclusively for the manual-plus-auto authority conflict (`routing.mode=auto` with an explicit `agentPreset`); it is **not** used for the ambiguous-route case, which returns `ambiguous_route`.
 - Every error should state:
   - the stage that failed;
   - whether a DSH session was created;
-  - whether the real prompt was sent;
+  - whether the real prompt was sent (`promptSent`);
   - selected/requested/resolved preset ids when safe and available;
   - safe next actions.
+
+- Automatic/manual/default verification behavior (exact):
+  - **automatic**: a missing/unobservable resolved preset, or a resolved preset that does not equal the requested preset, **fails closed** (`routing_verification_unavailable` or `resolved_preset_mismatch`); the prompt is not sent.
+  - **manual**: an observable mismatch fails closed (`resolved_preset_mismatch`); a legacy Host where the resolved preset is unobservable may continue with `verification="unavailable"` recorded.
+  - **DSH default** (no explicit preset, no auto mode): no equality check is performed; the actual resolved preset is still recorded in the Task Route Record as observed.
 - Normal success observability:
   - selection mode;
   - selected rule and preset;
@@ -787,7 +868,17 @@ Existing Supervision Core
 - Backprop when:
   - compact task hints cannot distinguish real target presets.
 
-### Phase 3: maintainer CLI and candidate rules
+### Phase 2.5: non-AI maintainer helpers (deferred)
+
+- Priority: `should` (deferred, non-AI, cold-path only)
+- Dependencies:
+  - stable Phase 2 active-rule-store behavior.
+- Work:
+  - `list-presets`;
+  - `route init`;
+  - `route validate`;
+  - `route doctor`.
+- These helpers are deliberately non-AI and do not affect the hot path; they only make the **active vs candidate/proposal store** split usable by hand. They remain deferred until a maintainer need is demonstrated.
 
 - Priority: `should`
 - Dependencies:
@@ -817,6 +908,7 @@ Existing Supervision Core
 
 - Priority: `defer`
 - Includes:
+  - Task Brief Policy (bounded brief rewriting/shaping), deferred to experiments — not a v1 route concern;
   - catalog revision/change events;
   - cache/TTL policy;
   - canary probing;
@@ -834,9 +926,9 @@ Existing Supervision Core
   - route schema accepts supported data and rejects executable/unknown shapes;
   - MCP hints and route rules accept the same controlled values;
   - omitted hints receive neutral defaults, and unknown hint fields or values return `routing_hints_invalid`;
-  - hard filters and scoring are table-driven and deterministic;
+  - hard filters and semantic ranking are table-driven and deterministic;
   - explicit/manual/default modes remain distinct;
-  - ties are deterministic;
+  - equal semantic tuples return `ambiguous_route`; the rule id is only a diagnostic order and never decides a tie;
   - no match and malformed config fail closed.
 - Mock Host integration tests:
   - roster present, missing, broken, and changed between calls;
@@ -866,10 +958,14 @@ Existing Supervision Core
   - any explain mode bounds candidates and text.
 - Live operator acceptance:
   - use a disposable workspace;
-  - run six to ten representative tasks;
+  - run six to ten representative tasks across three routing shapes:
+    - **A** — DSH default preset, raw task text;
+    - **B** — a specialized preset, raw task text;
+    - **C** — the same specialized preset with a human-made compact structured brief;
   - include built-in and available routing-suite presets;
   - verify DSH Web session visibility;
   - capture selected and resolved preset, test outcome, files changed, follow-up count, and manual reselection;
+  - compare B against A, and C against B; a **material B→C improvement is the only trigger to evaluate a constrained Task Brief Policy**;
   - release workspace claims after inspection.
 - Required commands after implementation:
 
@@ -925,7 +1021,7 @@ npm pack --dry-run --ignore-scripts
 | Workspace claim is mistaken for sandbox | Caller says a DSH session is read-only when it is not | Keep claim semantics explicit and separate |
 | Silent fallback changes behavior | User expects routing-suite but receives default code preset | No automatic fallback in v1 |
 | Meta Skill executes untrusted docs | README prompt injection runs commands or changes policy | Candidate data only; bounded core writer and explicit apply |
-| Multiple callers diverge | Codex and Claude implement different route scoring | Router exists only in shared Runtime |
+| Multiple callers diverge | Codex and Claude implement different route ranking | Router exists only in shared Runtime |
 | Caller and rule vocabularies drift | Caller emits `multi_file` while a rule expects `multi-file`, so every automatic route misses | One Runtime-owned enum source feeds MCP, rule validation, caller guidance, and tests; unknown values fail closed |
 | Shared route file is malformed | Every caller's automatic delegation fails with no visible explanation | Fail closed and expose read-only route health through doctor and Host status |
 | Schema expands ahead of evidence | Capability graph and launch hooks become another plugin runtime | Add fields only for demonstrated presets/failures |
@@ -934,11 +1030,13 @@ npm pack --dry-run --ignore-scripts
 
 - Deferred exact decisions:
   - route configuration filename and location;
+  - physical active vs candidate/proposal rule store layout;
   - physical Task Route Record storage;
   - final MCP field names;
   - dedicated explain tool versus doctor/status mode;
   - route-rule distribution and third-party contribution model;
   - bounded plugin-specific hint vocabulary and its discovery/distribution contract;
+  - constrained Task Brief Policy (triggered only by a material B→C falsifier result);
   - typed task adapter operations;
   - DSH capability endpoint proposal;
   - caching, change notification, fallback, canary, and self-tuning.
