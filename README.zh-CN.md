@@ -40,7 +40,7 @@ Claude Code 会安装项目 MCP 入口和随仓库提供的项目 skill；只有
 
 ### 手动安装
 
-1. 检查环境。当前经过测试的 DSH CLI 目标是 `0.1.0-rc.6`。
+1. 检查环境。当前经过测试的 DSH CLI 目标是 `0.1.0-rc.6` 与 `0.1.0-rc.7`。
 
    ```bash
    node --version
@@ -166,6 +166,7 @@ DSH 为复杂任务提供持久 session、工具调用、subagent 和人工监�
 - [架构与安全模型](docs/architecture.zh-CN.md) — 身份、状态、恢复、审批、取消与工作区协作
 - [多调用方扩展架构](docs/caller-integration-architecture.zh-CN.md) — Codex、Claude Code 与后续调用方共享 Runtime 和 Integration Pack 边界
 - [验证指南](docs/validation.md) — 兼容性检查与人工验收流程
+- [兼容性矩阵](docs/compatibility.md) — 已测试的 DSH 版本与验证证据
 - [已知问题](KNOWN_ISSUES.md) — 当前升级与并发运行限制
 - [贡献指南](CONTRIBUTING.md)与[安全说明](SECURITY.md)
 

@@ -146,7 +146,7 @@ export class FakeConnection implements DshConnection {
       baseUrl,
       connectionEpoch: 1,
       revision: 1,
-      testedAgainstDshVersion: "0.1.0-rc.6",
+      testedDshVersions: ["0.1.0-rc.6", "0.1.0-rc.7"],
       compatibility: "capability-probed",
       capabilities: {
         unaryRpc: true,
