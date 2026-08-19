@@ -77,13 +77,132 @@ function anyTableName(line: string): string | undefined {
 }
 
 function isBridgeTable(name: string): boolean {
+  const decoded = decodeDottedKey(name);
+  if (decoded === undefined) return false;
+  const joined = decoded.join(".");
   return CODEX_BRIDGE_SERVER_NAMES.some(
-    (serverName) =>
-      name === `mcp_servers.${serverName}` ||
-      name.startsWith(`mcp_servers.${serverName}.`) ||
-      name === `mcp_servers."${serverName}"` ||
-      name.startsWith(`mcp_servers."${serverName}".`),
+    (serverName) => joined === `mcp_servers.${serverName}` || joined.startsWith(`mcp_servers.${serverName}.`),
   );
+}
+
+const BASIC_KEY_ESCAPES: Record<string, string> = {
+  b: "\b",
+  t: "\t",
+  n: "\n",
+  f: "\f",
+  r: "\r",
+  '"': '"',
+  "\\": "\\",
+};
+
+function decodeBasicKeyContent(content: string): string | undefined {
+  let decoded = "";
+  let index = 0;
+  while (index < content.length) {
+    const char = content[index];
+    if (char === undefined) return undefined;
+    if (char !== "\\") {
+      decoded += char;
+      index += 1;
+      continue;
+    }
+    const escape = content[index + 1];
+    if (escape === undefined) return undefined;
+    if (escape === "u" || escape === "U") {
+      const hexLength = escape === "u" ? 4 : 8;
+      const hex = content.slice(index + 2, index + 2 + hexLength);
+      if (hex.length !== hexLength || !/^[0-9a-fA-F]+$/.test(hex)) return undefined;
+      decoded += String.fromCodePoint(Number.parseInt(hex, 16));
+      index += 2 + hexLength;
+      continue;
+    }
+    const mapped = BASIC_KEY_ESCAPES[escape];
+    if (mapped === undefined) return undefined;
+    decoded += mapped;
+    index += 2;
+  }
+  return decoded;
+}
+
+function splitKeySegments(keyText: string): string[] | undefined {
+  const segments: string[] = [];
+  let current = "";
+  let index = 0;
+  while (index < keyText.length) {
+    const char = keyText[index];
+    if (char === undefined) return undefined;
+    if (char === '"' || char === "'") {
+      const close = keyText.indexOf(char, index + 1);
+      if (close === -1) return undefined;
+      current += keyText.slice(index, close + 1);
+      index = close + 1;
+      continue;
+    }
+    if (char === ".") {
+      segments.push(current);
+      current = "";
+      index += 1;
+      continue;
+    }
+    current += char;
+    index += 1;
+  }
+  segments.push(current);
+  return segments;
+}
+
+function decodeKeySegment(segment: string): string | undefined {
+  const trimmed = segment.trim();
+  if (trimmed.length === 0) return undefined;
+  const quote = trimmed[0];
+  if (quote === "'") {
+    if (trimmed.length < 2 || !trimmed.endsWith("'")) return undefined;
+    return trimmed.slice(1, -1);
+  }
+  if (quote === '"') {
+    if (trimmed.length < 2 || !trimmed.endsWith('"')) return undefined;
+    return decodeBasicKeyContent(trimmed.slice(1, -1));
+  }
+  if (!/^[A-Za-z0-9_-]+$/.test(trimmed)) return undefined;
+  return trimmed;
+}
+
+// Decodes a dotted TOML key ("a.b", a."b", "a\u005fb".c) into segments.
+// Quoted dots stay inside their segment, matching TOML key semantics.
+function decodeDottedKey(keyText: string): string[] | undefined {
+  const rawSegments = splitKeySegments(keyText);
+  if (rawSegments === undefined) return undefined;
+  const decoded: string[] = [];
+  for (const segment of rawSegments) {
+    const value = decodeKeySegment(segment);
+    if (value === undefined) return undefined;
+    decoded.push(value);
+  }
+  return decoded;
+}
+
+// Extracts the decoded key segments of an `key = value` line without touching
+// the value. Returns undefined for non-assignment lines and "unsupported" for
+// assignments whose key we cannot parse safely (the caller must fail closed).
+function assignmentKey(line: string): readonly string[] | "unsupported" | undefined {
+  const trimmed = line.trim();
+  if (trimmed === "" || trimmed.startsWith("#") || trimmed.startsWith("[")) return undefined;
+  let index = 0;
+  while (index < trimmed.length) {
+    const char = trimmed[index];
+    if (char === undefined) return undefined;
+    if (char === '"' || char === "'") {
+      const close = trimmed.indexOf(char, index + 1);
+      if (close === -1) return "unsupported";
+      index = close + 1;
+      continue;
+    }
+    if (char === "=") break;
+    index += 1;
+  }
+  if (index >= trimmed.length) return undefined;
+  const decoded = decodeDottedKey(trimmed.slice(0, index));
+  return decoded ?? "unsupported";
 }
 
 export function hasBridgeConfig(config: string): boolean {
@@ -114,31 +233,56 @@ function rejectUnsupportedInlineConfig(config: string): void {
       "Codex config contains a multiline TOML string; setup will not edit it automatically. Use the manual configuration guide.",
     );
   }
-  const serverNamePattern = `(?:${CODEX_BRIDGE_SERVER_NAMES.flatMap((name) => [name, `"${name}"`]).join("|")})`;
-  const inlineOrDottedAssignment = new RegExp(`^\\s*mcp_servers\\s*\\.\\s*${serverNamePattern}\\s*(?:\\.|=)`, "m");
-  if (inlineOrDottedAssignment.test(config)) {
-    throw new Error(
-      "found an inline/dotted dsh-Agentlink MCP configuration; remove or convert it to table form before running setup",
+  const unsupportedKeyError = () =>
+    new Error(
+      "Codex config contains a quoted or escaped TOML key that setup cannot parse safely; convert it to plain table form before running setup",
     );
-  }
 
-  const lines = config.split(/\r?\n/);
+  // Only root-scope assignments (before the first table header) can collide
+  // with the appended root-level [mcp_servers.<name>] table. Assignments under
+  // another table header define that table's keys and are harmless here.
+  let inRootScope = true;
   let inMcpServersTable = false;
-  for (const line of lines) {
+  for (const line of config.split(/\r?\n/)) {
     const header = tableHeader(line);
-    const name = header?.name;
-    if (header !== undefined && header.array && isBridgeTable(header.name)) {
-      throw new Error(
-        "found an array-table dsh-Agentlink MCP configuration; remove or convert it to table form before running setup",
-      );
+    if (header !== undefined) {
+      inRootScope = false;
+      const name = decodeDottedKey(header.name)?.join(".");
+      if (name === undefined) throw unsupportedKeyError();
+      if (header.array && isBridgeTable(name)) {
+        throw new Error(
+          "found an array-table dsh-Agentlink MCP configuration; remove or convert it to table form before running setup",
+        );
+      }
+      if (CODEX_BRIDGE_SERVER_NAMES.some((serverName) => name.includes(serverName)) && !isBridgeTable(name)) {
+        throw new Error(
+          "found a non-standard dsh-Agentlink table; setup will not guess how to rewrite it. Use the manual configuration guide.",
+        );
+      }
+      inMcpServersTable = !header.array && name === "mcp_servers";
+      continue;
     }
-    if (name !== undefined && CODEX_BRIDGE_SERVER_NAMES.some((serverName) => name.includes(serverName)) && !isBridgeTable(name)) {
-      throw new Error(
-        "found a non-standard dsh-Agentlink table; setup will not guess how to rewrite it. Use the manual configuration guide.",
-      );
+    const key = assignmentKey(line);
+    if (key === "unsupported") throw unsupportedKeyError();
+    if (key === undefined) continue;
+    if (inRootScope && key[0] === "mcp_servers") {
+      // A root-level whole-inline-table assignment (mcp_servers = { ... }) cannot be
+      // extended by the appended [mcp_servers.<name>] table — TOML forbids adding to
+      // an inline table — so any such file would become invalid after an append,
+      // with or without a bridge entry inside. A root-level dotted assignment for a
+      // bridge server collides with the appended table just as directly.
+      if (key.length === 1) {
+        throw new Error(
+          "found a root-level inline mcp_servers table; convert it to [mcp_servers.<name>] table form before running setup",
+        );
+      }
+      if (CODEX_BRIDGE_SERVER_NAMES.some((serverName) => key[1] === serverName)) {
+        throw new Error(
+          "found an inline/dotted dsh-Agentlink MCP configuration; remove or convert it to table form before running setup",
+        );
+      }
     }
-    if (header !== undefined) inMcpServersTable = !header.array && header.name === "mcp_servers";
-    else if (inMcpServersTable && new RegExp(`^\\s*${serverNamePattern}\\s*=`).test(line)) {
+    if (inMcpServersTable && CODEX_BRIDGE_SERVER_NAMES.some((serverName) => key[0] === serverName)) {
       throw new Error(
         "found an inline dsh-Agentlink value under [mcp_servers]; remove or convert it to table form before running setup",
       );

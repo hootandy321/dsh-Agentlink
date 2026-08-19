@@ -195,6 +195,76 @@ test("setup rejects root-level inline bridge definitions before append and verif
   }
 });
 
+test("setup rejects root-level whole-inline-table mcp_servers before append and verification", () => {
+  const operation = createCodexInstallPlan({
+    configPath: "/tmp/codex/config.toml",
+    nodePath: "/Applications/Node Runtime/bin/node",
+    entryPath: "/tmp/dsh Agentlink/dist/index.js",
+    hostUrl: "http://127.0.0.1:3080",
+    dshVersion: "0.1.0-rc.6",
+    preset: "code",
+    replace: false,
+  }).operations[0];
+  assert.equal(operation?.kind, "upsert-mcp-server");
+
+  for (const config of [
+    'mcp_servers = { dsh_agentlink = { command = "old" } }\n',
+    'mcp_servers = { dsh_collab = { command = "legacy" } }\n',
+    '"mcp_servers" = { dsh_agentlink = { command = "old" } }\n',
+    'mcp_servers={ dsh_agentlink = { command = "old" } }\n',
+    // No bridge entry inside: appending a table would still break the file,
+    // because TOML forbids extending an inline table.
+    'mcp_servers = { other = { command = "other" } }\n',
+  ]) {
+    assert.throws(() => upsertMcpConfig(config, block, false), /root-level inline mcp_servers table/);
+    assert.throws(() => upsertMcpConfig(config, block, true), /root-level inline mcp_servers table/);
+    assert.equal(verifyCodexMcpConfig(`${config}${block}\n`, operation), false);
+  }
+});
+
+test("setup does not reject legal configs that merely mention mcp_servers", () => {
+  const legal = [
+    // A comment naming the inline form.
+    '# mcp_servers = { dsh_agentlink = { command = "old" } }\n',
+    // An unrelated key whose string value mentions the pattern.
+    'note = "mcp_servers = { dsh_agentlink = {} }"\n',
+    // A dotted key for a non-bridge server plus a legal bridge table.
+    'mcp_servers.other.command = "other"\n',
+  ];
+  for (const prefix of legal) {
+    const updated = upsertMcpConfig(`${prefix}\n[profile.default]\n`, block, false);
+    assert.match(updated, /\[mcp_servers\.dsh_agentlink]/);
+  }
+});
+
+test("setup allows a whole-inline-table mcp_servers scoped under another table", () => {
+  // Under [profile.default] this defines profile.default.mcp_servers, not the
+  // root key, so appending [mcp_servers.dsh_agentlink] is valid TOML.
+  const config = '[profile.default]\nmcp_servers = { other = { command = "other" } }\n';
+  const updated = upsertMcpConfig(config, block, false);
+  assert.match(updated, /\[mcp_servers\.dsh_agentlink]/);
+});
+
+test("setup rejects escaped or quoted root keys spelling mcp_servers", () => {
+  for (const config of [
+    '"mcp\\u005fservers" = { other = { command = "other" } }\n',
+    "'mcp_servers' = { other = { command = \"other\" } }\n",
+    'mcp_servers."dsh\\u005fagentlink" = { command = "old" }\n',
+    '"mcp_servers".dsh_agentlink = { command = "old" }\n',
+  ]) {
+    assert.throws(() => upsertMcpConfig(config, block, false), /inline/);
+  }
+});
+
+test("setup detects bridge tables whose names use escaped or quoted keys", () => {
+  assert.equal(hasBridgeConfig('[mcp_servers."dsh\\u005fagentlink"]\ncommand = "old"\n'), true);
+  assert.equal(hasBridgeConfig('["mcp_servers".dsh_collab]\ncommand = "old"\n'), true);
+  assert.throws(
+    () => upsertMcpConfig('[mcp_servers."dsh\\u005fagentlink"]\ncommand = "old"\n', block, false),
+    /already exists/,
+  );
+});
+
 test("setup does not report inline duplicates plus a matching table as an installed no-op", async (context) => {
   const directory = await mkdtemp(join(tmpdir(), "dsh-agentlink-inline-noop-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
