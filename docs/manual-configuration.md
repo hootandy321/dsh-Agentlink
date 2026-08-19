@@ -64,10 +64,10 @@ dsh web --host 127.0.0.1 --port 3080
 npm run doctor
 ```
 
-DSH CLI `0.1.0-rc.6` is the current tested target. In rc.6, `host.describe.version` reports the placeholder product value `0.0.1`; it is not the CLI/package version. Doctor checks the CLI version and probes Host capabilities separately. It also reports the bridge's fail-closed lock locations under `DSH_BRIDGE_HOME` (`claims/registry.lock` and `ledgers/<task>/events.lock`) read-only and never cleans them. Lock diagnostics expose only structural presence/type and bounded `entriesObserved`/`entriesTruncated` observations; they never read `owner.json` content or report pid, token, or `createdAt`.
+DSH CLI `0.1.0-rc.6` and `0.1.0-rc.7` are the current tested targets. In both, `host.describe.version` reports the placeholder product value `0.0.1`; it is not the CLI/package version. Doctor checks the CLI version and probes Host capabilities separately. It also reports the bridge's fail-closed lock locations under `DSH_BRIDGE_HOME` (`claims/registry.lock` and `ledgers/<task>/events.lock`) read-only and never cleans them. Lock diagnostics expose only structural presence/type and bounded `entriesObserved`/`entriesTruncated` observations; they never read `owner.json` content or report pid, token, or `createdAt`.
 
 The ingestion fix does not compact an existing 5 MB+ ledger. Preserve the old bridge home for inspection. If necessary, configure a separate `DSH_BRIDGE_HOME` for new delegations, understanding that bridge task ids, cursors, and claims begin fresh there. DSH `session.history` remains the authoritative conversation record. There is intentionally no automatic ledger or lock cleanup command.
 
-The rc.6 Web API has no auth token. Loopback-only is the safe default. A remote URL must be an explicitly trusted deployment and requires `DSH_ALLOW_REMOTE_HOST=true`.
+The rc.6/rc.7 Web API has no auth token. Loopback-only is the safe default. A remote URL must be an explicitly trusted deployment and requires `DSH_ALLOW_REMOTE_HOST=true`.
 
 dsh-Agentlink is not a DSH Cordis bundle. Do not install it with `dsh plugin --profile ... add ...`.

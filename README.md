@@ -40,7 +40,7 @@ Do not start or stop dsh web for me. Tell me when I need to reload the selected 
 
 ### Manual installation
 
-1. Check the environment. DSH CLI `0.1.0-rc.6` is the current tested target.
+1. Check the environment. DSH CLI `0.1.0-rc.6` and `0.1.0-rc.7` are the current tested targets.
 
    ```bash
    node --version
@@ -168,6 +168,7 @@ These are planned directions, not implemented capabilities or release commitment
 - [Plugin-aware routing requirements](docs/plugin-aware-routing-requirements.md) — product goals, safety boundaries, acceptance criteria, and deferred scope for choosing user-configured DSH Harness presets
 - [Plugin-aware routing architecture](docs/plugin-aware-routing-architecture.md) — hot-path Card Router, cold-path maintainer workflow, live DSH verification, and phased implementation
 - [Validation guide](docs/validation.md) — compatibility and operator acceptance checks
+- [Compatibility matrix](docs/compatibility.md) — tested DSH versions and verification evidence
 - [Known issues](KNOWN_ISSUES.md) — current upgrade and concurrency caveats
 - [Contributing](CONTRIBUTING.md) and [security](SECURITY.md)
 

@@ -64,10 +64,10 @@ dsh web --host 127.0.0.1 --port 3080
 npm run doctor
 ```
 
-当前经过测试的目标是 DSH CLI `0.1.0-rc.6`。在 rc.6 中，`host.describe.version` 会返回占位产品版本 `0.0.1`，它不是 CLI/package 版本。doctor 会分别检查 CLI 版本与 Host capability，并只读报告 `DSH_BRIDGE_HOME` 下的 fail-closed 锁位置（`claims/registry.lock` 与 `ledgers/<task>/events.lock`），从不清理它们。锁诊断只输出结构性的 presence/type 与有界的 `entriesObserved`/`entriesTruncated` 观察；绝不读取 `owner.json` 内容，也不报告 pid、token 或 `createdAt`。
+当前经过测试的目标是 DSH CLI `0.1.0-rc.6` 与 `0.1.0-rc.7`。在这两个版本中，`host.describe.version` 都会返回占位产品版本 `0.0.1`，它不是 CLI/package 版本。doctor 会分别检查 CLI 版本与 Host capability，并只读报告 `DSH_BRIDGE_HOME` 下的 fail-closed 锁位置（`claims/registry.lock` 与 `ledgers/<task>/events.lock`），从不清理它们。锁诊断只输出结构性的 presence/type 与有界的 `entriesObserved`/`entriesTruncated` 观察；绝不读取 `owner.json` 内容，也不报告 pid、token 或 `createdAt`。
 
 本次 ingestion 修复不会自动压缩已有的 5 MB 以上 ledger。请保留旧 bridge home 备查；如有需要，可为新的委派配置独立的 `DSH_BRIDGE_HOME`，但其中的 bridge task id、cursor 与 claim 会重新开始。DSH `session.history` 始终是权威对话记录。文档有意不提供自动清理 ledger 或锁的命令。
 
-rc.6 Web API 没有 auth token，因此 loopback-only 是安全默认值。远程 URL 必须是用户明确信任的部署，并同时设置 `DSH_ALLOW_REMOTE_HOST=true`。
+rc.6/rc.7 的 Web API 没有 auth token，因此 loopback-only 是安全默认值。远程 URL 必须是用户明确信任的部署，并同时设置 `DSH_ALLOW_REMOTE_HOST=true`。
 
 dsh-Agentlink 不是 DSH Cordis bundle，请不要使用 `dsh plugin --profile ... add ...` 安装。

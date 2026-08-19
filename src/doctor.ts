@@ -11,7 +11,7 @@ import type { DshApi } from "./dsh-types.js";
 import { collectLockDiagnostics } from "./lock-doctor.js";
 
 const execFileAsync = promisify(execFile);
-const TESTED_CLI_VERSION = "0.1.0-rc.6";
+const TESTED_CLI_VERSIONS = ["0.1.0-rc.6", "0.1.0-rc.7"] as const;
 
 export type CliVersionProbe = () => Promise<string | undefined>;
 
@@ -96,23 +96,24 @@ export async function runDoctor(
       }
     }
     const coreCompatible = mux.ok && history !== false;
-    const testedBuild = cliVersion === TESTED_CLI_VERSION;
+    const testedBuild = cliVersion !== undefined && (TESTED_CLI_VERSIONS as readonly string[]).includes(cliVersion);
+    const testedList = TESTED_CLI_VERSIONS.join(" or ");
     return {
       ok: coreCompatible,
       connectOnly: true,
       baseUrl: config.hostUrl,
       checkedAt: new Date().toISOString(),
       dshCliVersion: cliVersion ?? null,
-      testedCliVersion: TESTED_CLI_VERSION,
+      testedCliVersions: [...TESTED_CLI_VERSIONS],
       hostDescribeProductVersion: description.version,
       hostVersionWarning:
         description.version === "0.0.1"
-          ? "rc.6 host.describe.version is a known placeholder and is not the DSH CLI/package version"
+          ? "host.describe.version is a known placeholder and is not the DSH CLI/package version"
           : "host.describe.version is reported separately and is not used as the CLI compatibility gate",
       compatibility: testedBuild && coreCompatible ? "tested" : coreCompatible ? "compatible-untested" : "incompatible",
       warning: testedBuild
         ? undefined
-        : `Only DSH CLI ${TESTED_CLI_VERSION} has been locally verified; detected ${cliVersion ?? "unknown"}`,
+        : `Only DSH CLI ${testedList} have been locally verified; detected ${cliVersion ?? "unknown"}`,
       capabilities: { ...coreCapabilities, history },
       muxError: mux.error,
       sessionCount: sessions.items.length,
@@ -126,7 +127,7 @@ export async function runDoctor(
       baseUrl: config.hostUrl,
       checkedAt: new Date().toISOString(),
       dshCliVersion: cliVersion ?? null,
-      testedCliVersion: TESTED_CLI_VERSION,
+      testedCliVersions: [...TESTED_CLI_VERSIONS],
       availability: "host_unreachable",
       error: error instanceof Error ? { name: error.name, message: error.message } : { message: String(error) },
       startCommand: startCommand(config.hostUrl),

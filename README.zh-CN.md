@@ -40,7 +40,7 @@ Claude Code 会安装项目 MCP 入口和随仓库提供的项目 skill；只有
 
 ### 手动安装
 
-1. 检查环境。当前经过测试的 DSH CLI 目标是 `0.1.0-rc.6`。
+1. 检查环境。当前经过测试的 DSH CLI 目标是 `0.1.0-rc.6` 与 `0.1.0-rc.7`。
 
    ```bash
    node --version
@@ -168,6 +168,7 @@ DSH 为复杂任务提供持久 session、工具调用、subagent 和人工监�
 - [插件感知路由需求](docs/plugin-aware-routing-requirements.zh-CN.md) — 面向用户配置的 DSH Harness preset 选择目标、安全边界、验收标准与延期范围
 - [插件感知路由架构](docs/plugin-aware-routing-architecture.zh-CN.md) — 热路径 Card Router、冷路径维护流程、DSH 实时校验与分阶段实现
 - [验证指南](docs/validation.md) — 兼容性检查与人工验收流程
+- [兼容性矩阵](docs/compatibility.md) — 已测试的 DSH 版本与验证证据
 - [已知问题](KNOWN_ISSUES.md) — 当前升级与并发运行限制
 - [贡献指南](CONTRIBUTING.md)与[安全说明](SECURITY.md)
 

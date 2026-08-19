@@ -18,7 +18,7 @@ import type {
 } from "./dsh-types.js";
 import type { TaskRecord, TaskStore } from "./task-store.js";
 
-export const TESTED_DSH_VERSION = "0.1.0-rc.6";
+export const TESTED_DSH_VERSIONS = ["0.1.0-rc.6", "0.1.0-rc.7"] as const;
 
 export type HostAvailability = "connecting" | "connected" | "host_unreachable" | "stopped";
 
@@ -31,7 +31,7 @@ export interface HostConnectionSnapshot {
   disconnectedAt?: string;
   hostDescribeProductVersion?: string;
   declaredDshVersion?: string;
-  testedAgainstDshVersion: typeof TESTED_DSH_VERSION;
+  testedDshVersions: readonly string[];
   compatibility: "capability-probed" | "untested" | "unknown";
   warning?: string;
   lastError?: string;
@@ -290,7 +290,7 @@ export class DshConnectionManager implements DshConnection {
       baseUrl: config.hostUrl,
       connectionEpoch: 0,
       revision: 0,
-      testedAgainstDshVersion: TESTED_DSH_VERSION,
+      testedDshVersions: [...TESTED_DSH_VERSIONS],
       compatibility: "unknown",
       ...(config.declaredDshVersion === undefined ? {} : { declaredDshVersion: config.declaredDshVersion }),
       capabilities: {
@@ -534,15 +534,17 @@ export class DshConnectionManager implements DshConnection {
       });
     }
     const declaredVersion = this.config.declaredDshVersion;
-    const compatibility = declaredVersion === TESTED_DSH_VERSION ? "capability-probed" : "untested";
+    const testedList = TESTED_DSH_VERSIONS.join(" or ");
+    const declaredIsTested = declaredVersion !== undefined && (TESTED_DSH_VERSIONS as readonly string[]).includes(declaredVersion);
+    const compatibility = declaredIsTested ? "capability-probed" : "untested";
     const warnings = [
       declaredVersion === undefined
-        ? `DSH CLI/package version is unknown to the bridge runtime; only ${TESTED_DSH_VERSION} was locally verified`
-        : declaredVersion === TESTED_DSH_VERSION
+        ? `DSH CLI/package version is unknown to the bridge runtime; only ${testedList} were locally verified`
+        : declaredIsTested
           ? undefined
-          : `Operator-declared DSH version ${declaredVersion} is untested; only ${TESTED_DSH_VERSION} was locally verified`,
+          : `Operator-declared DSH version ${declaredVersion} is untested; only ${testedList} were locally verified`,
       description.version === "0.0.1"
-        ? "host.describe.version is the rc.6 placeholder, not the DSH CLI/package version"
+        ? "host.describe.version is a known placeholder, not the DSH CLI/package version"
         : `Host product version ${description.version} is reported separately from the DSH CLI/package version`,
     ].filter((warning): warning is string => warning !== undefined);
     this.setState({
@@ -552,7 +554,7 @@ export class DshConnectionManager implements DshConnection {
       revision: this.state.revision,
       connectedAt: new Date().toISOString(),
       hostDescribeProductVersion: description.version,
-      testedAgainstDshVersion: TESTED_DSH_VERSION,
+      testedDshVersions: [...TESTED_DSH_VERSIONS],
       compatibility,
       warning: warnings.join("; "),
       ...(this.config.declaredDshVersion === undefined ? {} : { declaredDshVersion: this.config.declaredDshVersion }),
