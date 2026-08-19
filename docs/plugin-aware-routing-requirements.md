@@ -191,12 +191,11 @@ flowchart LR
 - A route rule may include:
   - stable local rule id;
   - target Agent Preset id;
-  - task kinds and positive signals;
-  - exclusion signals;
+  - the closed typed v1 matching fields `kind`, `scale`, `parallelism`, `evidence`, and `optimizationIntent`; no arbitrary plugin signal strings;
   - deterministic priority;
   - optional human-readable short reason;
-  - provenance indicating whether the rule was written by the user, shipped by Agentlink, or proposed by a maintenance workflow.
-- v1 `taskKinds`, positive signals, exclusions, and preferences must reference the same controlled values accepted by the public task-hint schema. Unknown values make the rule configuration invalid; they are not silently normalized as synonyms.
+  - provenance: the rule source is `builtin` or `user`; proposals/candidates stay in a separate store until a user explicitly applies them.
+- Route-rule matching must reference only the closed typed v1 fields `kind`, `scale`, `parallelism`, `evidence`, and `optimizationIntent` accepted by the public task-hint schema; no arbitrary plugin signal strings. Active rule sources are `builtin` or `user`; proposals/candidates stay separate until a user explicitly applies them. Unknown values make the rule configuration invalid; they are not silently normalized as synonyms.
 - A route rule must not contain:
   - arbitrary shell commands or executable callbacks;
   - credentials;
@@ -213,7 +212,7 @@ flowchart LR
 - Determinism is scoped to equal normalized hints, equal rules, and the live roster; it does not extend to free-text prompts or model-generated prose.
 - **Equal semantic candidates produce `ambiguous_route`; rule IDs only stably order diagnostics.** `routing_request_ambiguous` means manual + auto conflict. All active-file rules are active; determinism applies across every applied rule for the same normalized hints and live roster.
 - One canonical Runtime definition must generate or validate the MCP enums, route-rule schema, caller guidance, and table tests. Caller packs learn the vocabulary from that shared contract and never need the user's complete rule file or plugin catalog.
-- Missing hints normalize to the documented neutral defaults. Unknown fields or unknown controlled values fail with a typed routing-hint error; v1 does not silently accept arbitrary strings.
+- Ordinary non-auto/default delegation may omit routing entirely. Automatic routing requires at least one explicitly supplied valid hint dimension unless an active explicit catch-all rule covers the delegation; automatic routing does not receive neutral defaults for missing hints. Unknown fields or unknown controlled values fail with a typed routing-hint error; v1 does not silently accept arbitrary strings.
 - Approximately one hundred rules must remain practical with ordinary in-memory filtering; v1 does not require a vector database or bitset index.
 
 ### FR-06: Staged fail-closed launch
@@ -395,8 +394,8 @@ flowchart LR
 - Selection:
   - representative tasks map deterministically to expected presets using only route rules and task hints;
   - the MCP task-hint schema and route-rule validator accept the same controlled values across Codex and Claude Code;
-  - missing hints normalize to the documented neutral values, while unknown fields or enum values return `routing_hints_invalid`;
-  - tied scores resolve deterministically;
+  - missing hints on ordinary non-auto/default delegation may omit routing; automatic routing requires at least one valid supplied hint dimension unless an active explicit catch-all rule covers it, while unknown fields or enum values return `routing_hints_invalid`;
+  - equal semantic ranking tuples return `ambiguous_route`, with rule ids only ordering diagnostics;
   - an automatic request with no configured route rules returns `routing_not_configured`, while explicit and DSH-default delegation remain available;
   - malformed rules fail closed;
   - doctor or Host status reports missing, valid, and malformed route configuration distinctly;

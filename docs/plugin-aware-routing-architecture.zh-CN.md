@@ -414,7 +414,7 @@ interface RoutingHints {
 - 一个 canonical Runtime definition 必须供给 MCP schema、route-rule validation、generated caller guidance 和 tests。Codex、Claude Code 和后续调用方不定义自己的 aliases。
 - Agentlink release version 是该词表的 compatibility boundary；v1 不增加第二个 vocabulary version 字段，也不允许 route file 重定义它。
 - MCP schema 直接暴露这些 enums，因此调用方不需要读取 route file、preset roster 或 plugin documentation 就能形成有效请求。
-- 省略值归一化为文档化的中性默认值。未知 object fields 或 enum values 返回 `routing_hints_invalid`；v1 不做 lowercase、translate、synonym-map 或把任意字符串重新解释。
+- 普通非自动/默认委派可以省略 hint；自动模式要求有效 hint 或 active explicit catch-all rule，缺失 hint 不会收到中性默认值。未知 object fields 或 enum values 返回 `routing_hints_invalid`；v1 不做 lowercase、translate、synonym-map 或把任意字符串重新解释。
 - Route rules 只能引用同一组 core vocabulary，不能通过添加 open strings 扩展它。
 - 未来 plugin-specific vocabulary 需要单独设计 bounded discovery、namespacing、caller distribution、schema/version drift 和 context cost。在此之前，专用 presets 用 core values 描述或由用户显式选择。
 - RoutingHints 只表达 task fit。它们不选择 model、不授予 authority、不证明 safety、不修改 workspace claim，也不改变 DSH sandbox、approval、network、credentials、tools 或 plugin state。
@@ -909,7 +909,7 @@ Existing Supervision Core
 - Static and unit checks：
   - route schema 接收 supported data，并拒绝 executable/unknown shapes；
   - MCP hints 和 route rules 接收同一组受控值；
-  - 省略 hints 得到中性默认值，unknown hint fields 或 values 返回 `routing_hints_invalid`；
+  - 普通非自动委派可以省略 hints；自动路由要求有效 hint 或 active explicit catch-all rule，unknown hint fields 或 values 返回 `routing_hints_invalid`；
   - hard filters 和 semantic ranking 是 table-driven 且 deterministic；
   - explicit/manual/default modes 保持 distinct；
   - 语义元组相等返回 `ambiguous_route`；rule id 只作为诊断顺序，绝不决定 tie；

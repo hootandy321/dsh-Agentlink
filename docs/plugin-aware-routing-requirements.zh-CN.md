@@ -191,12 +191,11 @@ flowchart LR
 - route rule 可以包含：
   - 稳定的本地 rule id；
   - 目标 Agent Preset id；
-  - task kinds 和正向信号；
-  - 排除信号；
+  - 封闭的 typed v1 匹配字段 `kind`、`scale`、`parallelism`、`evidence`、`optimizationIntent`；不允许任意插件自定义信号；
   - 确定性 priority；
   - 可选的人类可读短原因；
-  - provenance，说明该规则由用户编写、由 Agentlink 随包提供，还是由维护工作流提出。
-- v1 使用封闭的类型化分类法，route rule 中的匹配与启动选择仅能引用五类受控值：kind、scale、parallelism、evidence、optimizationIntent。不允许任意插件自定义信号；未知值会让 rule configuration invalid，且不能静默按同义词归一化。
+  - provenance：rule source 为 `builtin` 或 `user`；proposals/candidates 保持在独立 store，直到用户显式应用。
+- route rule 中的匹配仅能引用 v1 封闭的类型化字段 `kind`、`scale`、`parallelism`、`evidence`、`optimizationIntent`，这些字段与公共 task-hint schema 接受的受控值一致；不允许任意插件自定义信号。Active rule source 为 `builtin` 或 `user`；proposals/candidates 保持独立，直到用户显式应用。未知值会让 rule configuration invalid，且不能静默按同义词归一化。
 - route rule 不能包含：
   - 任意 shell commands 或 executable callbacks；
   - credentials；
@@ -213,7 +212,7 @@ flowchart LR
 - 确定性限定在相等的 normalized hints、相等的 rules 和 live roster；它不延伸到自由文本 prompt 或模型生成的 prose。
 - **语义相等的候选产生 `ambiguous_route`；rule ids 只用于稳定地排列诊断。**`routing_request_ambiguous` 表示 manual + auto 冲突。active-file 中所有 rules 都是 active；确定性适用于同一 normalized hints 和 live roster 下的每一条被应用规则。
 - 一个 canonical Runtime definition 必须生成或验证 MCP enums、route-rule schema、caller guidance 和 table tests。Caller packs 从这个 shared contract 学习词表，不需要用户的完整 rule file 或 plugin catalog。
-- 缺失 hints 归一化为文档化的中性默认值。未知字段或未知受控值以 typed routing-hint error 失败；v1 不静默接受任意字符串。
+- 普通非自动/默认委派可以完全省略 routing hints。自动路由要求至少一个显式提供的有效 hint dimension，除非 active explicit catch-all rule 覆盖该委派；自动路由缺失 hints 时不会收到中性默认值。未知字段或未知受控值以 typed routing-hint error 失败；v1 不静默接受任意字符串。
 - 大约一百条规则必须能通过普通内存过滤实际处理；v1 不要求 vector database 或 bitset index。
 
 ### FR-06：分阶段 fail-closed 启动
@@ -394,8 +393,8 @@ flowchart LR
 - 选择：
   - 代表性任务仅使用 route rules 和 task hints，确定性映射到预期 presets；
   - MCP task-hint schema 和 route-rule validator 在 Codex 与 Claude Code 中接受同一组受控值；
-  - 缺失 hints 归一化为文档化的中性值，而未知字段或 enum values 返回 `routing_hints_invalid`；
-  - tied scores 确定性解析；
+  - 普通非自动/默认委派可以省略 routing hints；自动路由要求至少一个有效提供的 hint dimension，除非 active explicit catch-all rule 覆盖它，未知字段或 enum values 返回 `routing_hints_invalid`；
+  - 语义排序元组相等时返回 `ambiguous_route`，rule ids 只用于排列诊断；
   - 自动路由请求在没有配置 route rules 时返回 `routing_not_configured`，同时显式委派和 DSH-default 委派仍可使用；
   - malformed rules fail closed；
   - doctor 或 Host status 区分报告 missing、valid 和 malformed route configuration；

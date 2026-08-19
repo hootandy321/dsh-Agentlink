@@ -880,6 +880,8 @@ Existing Supervision Core
   - `route doctor`.
 - These helpers are deliberately non-AI and do not affect the hot path; they only make the **active vs candidate/proposal store** split usable by hand. They remain deferred until a maintainer need is demonstrated.
 
+### Phase 3: maintainer candidate-rule workflow
+
 - Priority: `should`
 - Dependencies:
   - stable experience with manually written v1 rules.
@@ -925,7 +927,7 @@ Existing Supervision Core
 - Static and unit checks:
   - route schema accepts supported data and rejects executable/unknown shapes;
   - MCP hints and route rules accept the same controlled values;
-  - omitted hints receive neutral defaults, and unknown hint fields or values return `routing_hints_invalid`;
+  - ordinary non-auto/default delegation may omit hints; automatic routing requires at least one valid supplied hint dimension or an active explicit catch-all rule, and unknown hint fields or values return `routing_hints_invalid`;
   - hard filters and semantic ranking are table-driven and deterministic;
   - explicit/manual/default modes remain distinct;
   - equal semantic tuples return `ambiguous_route`; the rule id is only a diagnostic order and never decides a tie;
