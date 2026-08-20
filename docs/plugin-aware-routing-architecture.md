@@ -145,7 +145,8 @@
   - `dsh_delegate` already accepts optional `agentPreset` and forwards it to `session.create`;
   - the bridge already owns task mapping, cooperative workspace claims, model-route checks, prompt submission, status, events, approvals, follow-up, cancellation, and recovery;
   - DSH session/history remains authoritative for content;
-  - routing rules, automatic selection, and Task Route Records do not exist yet.
+  - typed preset discovery, requested/resolved verification, and content-free Task Route Records exist in the shared Runtime;
+  - routing rules and automatic selection do not exist yet.
 - Facts not currently exposed by the checked rc.6/rc.7 contract surface:
   - a generic per-session tool/capability inventory;
   - a public preset-composition generation id;
@@ -842,7 +843,7 @@ Existing Supervision Core
   - supported/tested Host versions return sufficient facts;
   - a mismatch is proven to stop before prompt.
 - Compatibility note:
-  - rc.7 is source/package-audited for this fact surface but remains live-unverified until the normal disposable-workspace acceptance run is completed against an rc.7 Host.
+  - rc.7 has completed the normal disposable-workspace live acceptance recorded in `docs/compatibility.md`.
 - Backprop when:
   - resolved preset cannot be observed reliably.
 
@@ -857,7 +858,7 @@ Existing Supervision Core
   - publish the same controlled hint enums through MCP validation and generated caller guidance;
   - implement side-effect-free deterministic selection;
   - extend existing delegation with mutually exclusive auto/manual/default modes;
-  - persist Task Route Record;
+  - extend the existing Task Route Record with the selected rule id and automatic-routing reason;
   - add read-only route-configuration health to the existing doctor and `dsh_host_status` surfaces;
   - return compact routing diagnostics.
 - Risk:

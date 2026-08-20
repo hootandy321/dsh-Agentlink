@@ -145,7 +145,8 @@
   - `dsh_delegate` 已经接收可选 `agentPreset` 并转发给 `session.create`；
   - bridge 已负责任务映射、协作式 workspace claim、model-route checks、prompt submission、status、events、approvals、follow-up、cancellation 和 recovery；
   - DSH session/history 仍是内容权威来源；
-  - routing rules、automatic selection 和 Task Route Records 还不存在。
+  - shared Runtime 已具备 typed preset discovery、requested/resolved verification 和无内容 Task Route Records；
+  - routing rules 和 automatic selection 还不存在。
 - 当前检查过的 rc.6/rc.7 contract surface 未暴露的事实：
   - 通用的每 session 工具/能力清单；
   - 公共 preset-composition generation id；
@@ -824,7 +825,7 @@ Existing Supervision Core
   - supported/tested Host versions 返回足够事实；
   - mismatch 被证明会在 prompt 前停止。
 - Compatibility note：
-  - 对这组 fact surface，rc.7 已完成 source/package audit，但在针对 rc.7 Host 完成常规 disposable-workspace acceptance run 前，仍保持 live-unverified。
+  - rc.7 已完成 `docs/compatibility.md` 记录的常规 disposable-workspace live acceptance。
 - Backprop when：
   - resolved preset 无法可靠观察。
 
@@ -839,7 +840,7 @@ Existing Supervision Core
   - 通过 MCP validation 和 generated caller guidance 发布同一组 controlled hint enums；
   - 实现 side-effect-free deterministic selection；
   - 使用互斥 auto/manual/default modes 扩展现有 delegation；
-  - persist Task Route Record；
+  - 用 selected rule id 和 automatic-routing reason 扩展现有 Task Route Record；
   - 将 read-only route-configuration health 加入现有 doctor 和 `dsh_host_status` surfaces；
   - 返回 compact routing diagnostics。
 - Risk：
