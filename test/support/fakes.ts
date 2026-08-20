@@ -55,6 +55,7 @@ export class FakeDshApi implements DshApi {
    * - `null`: force the created session to expose no resolved preset even when one was requested (legacy/absent Host).
    */
   sessionCreateResolvedAgentPreset?: string | null = undefined;
+  sessionModelsAgentPreset?: string | null = undefined;
   updateQueueErrors = new Map<string, Error>();
   private rpcSeq = 0;
 
@@ -76,10 +77,17 @@ export class FakeDshApi implements DshApi {
   async sessionCreate(payload: { cwd: string; agentPreset?: string; sessionId?: string }) {
     this.calls.push({ method: "session.create", payload });
     const sessionId = payload.sessionId ?? this.nextSessionId;
-    if (!this.sessions.some((item) => item.sessionId === sessionId)) {
-      this.sessions.push({ sessionId, updatedAt: Date.now(), running: true, blank: false, cwd: payload.cwd });
-    }
     const resolved = this.sessionCreateResolvedAgentPreset !== undefined ? this.sessionCreateResolvedAgentPreset : payload.agentPreset;
+    if (!this.sessions.some((item) => item.sessionId === sessionId)) {
+      this.sessions.push({
+        sessionId,
+        updatedAt: Date.now(),
+        running: true,
+        blank: false,
+        cwd: payload.cwd,
+        ...(resolved === undefined || resolved === null ? {} : { agentPreset: resolved }),
+      });
+    }
     return this.unary("session.create", {
       sessionId,
       ...(resolved === undefined || resolved === null ? {} : { agentPreset: resolved }),
@@ -88,6 +96,13 @@ export class FakeDshApi implements DshApi {
 
   async sessionModels(sessionId: string) {
     this.calls.push({ method: "session.models", payload: { sessionId } });
+    if (this.sessionModelsAgentPreset !== undefined) {
+      const session = this.sessions.find((item) => item.sessionId === sessionId);
+      if (session !== undefined) {
+        if (this.sessionModelsAgentPreset === null) delete session.agentPreset;
+        else session.agentPreset = this.sessionModelsAgentPreset;
+      }
+    }
     return this.unary("session.models", this.models);
   }
 

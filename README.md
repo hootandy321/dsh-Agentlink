@@ -138,7 +138,7 @@ The caller can then delegate the task, observe its event stream, continue the sa
 - `dsh_delegate` — create a root session and queue the initial prompt; detached by default (`waitSeconds=0`); `workspaceMode` is a bridge-local claim, not a DSH sandbox selector
 - `dsh_followup` — continue the same root session with explicit `mode="queue"|"steer"` (default `queue`)
 - `dsh_continue` — compatibility alias for `dsh_followup`
-- `dsh_status` — availability, execution, lineage, queue, pending interactions, final message, cursors, and workspace claim semantics
+- `dsh_status` — availability, execution, content-free launch route/failure state, lineage, queue, pending interactions, final message, cursors, and workspace claim semantics
 - `dsh_tail` — bounded event digests using a bridge task cursor
 - `dsh_wait` — wait up to 30 seconds for a durable event, state change, pending interaction, or terminal status
 - `dsh_observe` — compatibility alias around `dsh_wait`; bridge cursors replace raw session seq cursors

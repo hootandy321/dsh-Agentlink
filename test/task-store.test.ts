@@ -1,10 +1,21 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, stat, writeFile, mkdir } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { TaskStore, TaskStoreError } from "../src/task-store.js";
+import { TaskStore, TaskStoreError, type TaskRouteRecord } from "../src/task-store.js";
+
+const initialRoute: TaskRouteRecord = {
+  selectionMode: "manual",
+  requestedPreset: "code",
+  resolvedPreset: "code",
+  verification: "verified",
+  launchStage: "preset-verified",
+  promptSent: false,
+  reasonCode: "manual_selection",
+  recordedAt: "2026-08-20T00:00:00.000Z",
+};
 
 test("TaskStore persists only taskId to sessionId with private permissions", async () => {
   const home = await mkdtemp(join(tmpdir(), "codex-dsh-store-"));
@@ -39,6 +50,118 @@ test("TaskStore rejects invalid ids, malformed mappings, and content-bearing ext
       JSON.stringify({ taskId: "dsh_000000000002", sessionId: "session-2", prompt: "must-not-surface" }),
     );
     await assert.rejects(() => store.get("dsh_000000000002"), TaskStoreError);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("TaskStore atomically creates and round-trips a strict route record", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-dsh-store-"));
+  try {
+    const store = new TaskStore(home);
+    const record = await store.create("session-root", initialRoute);
+    const path = join(home, "tasks", `${record.taskId}.json`);
+    const persisted = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
+
+    assert.deepEqual(Object.keys(persisted).sort(), ["route", "sessionId", "taskId"]);
+    assert.deepEqual(Object.keys(persisted.route as Record<string, unknown>).sort(), [
+      "launchStage",
+      "promptSent",
+      "reasonCode",
+      "recordedAt",
+      "requestedPreset",
+      "resolvedPreset",
+      "selectionMode",
+      "verification",
+    ]);
+    assert.deepEqual(record.route, initialRoute);
+    assert.deepEqual(await store.get(record.taskId), record);
+    assert.equal((await stat(path)).mode & 0o777, 0o600);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("TaskStore updates a route without changing its mapping and survives a fresh instance", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-dsh-store-"));
+  try {
+    const store = new TaskStore(home);
+    const created = await store.create("session-root", initialRoute);
+    const failedRoute: TaskRouteRecord = {
+      selectionMode: "manual",
+      requestedPreset: "code",
+      resolvedPreset: "standard",
+      verification: "failed",
+      launchStage: "launch-failed",
+      promptSent: false,
+      failureCode: "resolved_preset_mismatch",
+      recordedAt: "2026-08-20T00:00:01.000Z",
+    };
+
+    const updated = await store.updateRoute(created.taskId, failedRoute);
+
+    assert.equal(updated.taskId, created.taskId);
+    assert.equal(updated.sessionId, "session-root");
+    assert.deepEqual(updated.route, failedRoute);
+    assert.deepEqual(await new TaskStore(home).get(created.taskId), updated);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("TaskStore rejects malformed and content-bearing route records", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-dsh-store-"));
+  try {
+    const store = new TaskStore(home);
+    await assert.rejects(
+      () => store.create("session-root", { ...initialRoute, verification: "unknown" } as unknown as TaskRouteRecord),
+      TaskStoreError,
+    );
+    await assert.rejects(
+      () => store.create("session-root", { ...initialRoute, prompt: "must-not-persist" } as unknown as TaskRouteRecord),
+      TaskStoreError,
+    );
+    await assert.rejects(
+      () => store.create("session-root", { ...initialRoute, promptSent: true } as TaskRouteRecord),
+      TaskStoreError,
+    );
+    await assert.rejects(
+      () => store.create("session-root", { ...initialRoute, recordedAt: "not-a-date" } as TaskRouteRecord),
+      TaskStoreError,
+    );
+
+    await mkdir(join(home, "tasks"), { recursive: true });
+    await writeFile(
+      join(home, "tasks", "dsh_000000000003.json"),
+      JSON.stringify({
+        taskId: "dsh_000000000003",
+        sessionId: "session-3",
+        route: { ...initialRoute, response: "must-not-surface" },
+      }),
+    );
+    await assert.rejects(() => store.get("dsh_000000000003"), TaskStoreError);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("TaskStore update refuses symlink and non-regular targets without leaving temp files", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-dsh-store-"));
+  try {
+    const tasksDir = join(home, "tasks");
+    await mkdir(tasksDir, { recursive: true });
+    const outside = join(home, "outside.json");
+    await writeFile(outside, "{}\n");
+    await symlink(outside, join(tasksDir, "dsh_000000000004.json"));
+    await mkdir(join(tasksDir, "dsh_000000000005.json"));
+    const store = new TaskStore(home);
+
+    await assert.rejects(() => store.updateRoute("dsh_000000000004", initialRoute), TaskStoreError);
+    await assert.rejects(() => store.updateRoute("dsh_000000000005", initialRoute), TaskStoreError);
+    assert.deepEqual(
+      (await readdir(tasksDir)).filter((name) => name.endsWith(".tmp")),
+      [],
+    );
   } finally {
     await rm(home, { recursive: true, force: true });
   }

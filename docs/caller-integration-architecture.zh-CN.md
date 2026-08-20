@@ -272,7 +272,7 @@ DSH 有两个扩展层面，Agentlink 必须将它们分开处理：
 - **Host/profile bundle** 由用户安装到某个 DSH profile，并随该 profile 启动；它可以注册插件、工具、命令和 Agent Preset。Agentlink 继续保持 connect-only：不安装 bundle，不选择或改写 Host profile，也不启动、停止或重启 `dsh web`。
 - **Agent Preset** 通过 `session.create.agentPreset` 为单个 session 选择。DSH 会在第一条用户 prompt 前解析并挂载对应组合，将它记录在 session 中，并在恢复 session 时再次使用。Agentlink 已经能够传递调用方指定或安装时默认的 `agentPreset`，所以用户安装的插件只要提供 Agent Preset，现在就能创建具有插件能力的 session，而不是普通默认 session。
 
-当前缺口在可观察性和初始化协议，而不是需要第二套 Runtime。Agentlink 还不会在创建前检查 Host 的 Agent Preset 清单，不会在 delegate/status 结果里报告 Host 实际解析出的 preset，也无法表达创建 session 后仍需类型化初始化的插件。在这些能力完成前，“支持”只指**由用户安装和配置的 preset 型插件**，不表示 Agentlink 能自动发现或适配任意 DSH 插件。
+Agentlink 现在会预检实时 Agent Preset 清单，在首个 prompt 前两次验证实际解析的 preset，并为 delegate/status 诊断保存无内容的启动记录。剩余缺口是自动选择，以及对“仅选择 preset 仍不足”的插件进行类型化初始化。“支持”仍只指**由用户安装和配置的 preset 型插件**，不表示 Agentlink 能自动发现或适配任意 DSH 插件。
 
 后续首选方案是由唯一一套 DSH backend pipeline 消费声明式 **Session Launch Profile**。profile 可以声明 Agent Preset、必需的 Host 能力、严格白名单内的类型化 DSH session 操作和后置条件；它是配置数据，不是可执行插件代码。固定启动顺序为：
 

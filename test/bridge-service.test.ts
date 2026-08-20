@@ -103,8 +103,42 @@ test("delegate retains the task mapping when route verification fails and does n
       () => service.delegate({ prompt: "work", cwd: home }),
       (error: unknown) => error instanceof DelegationSetupError && error.stage === "models" && error.taskId !== undefined,
     );
-    assert.equal((await tasks.list()).length, 1);
+    const [persisted] = await new TaskStore(home).list();
+    assert.ok(persisted?.route);
+    assert.equal(persisted.route.launchStage, "launch-failed");
+    assert.equal(persisted.route.promptSent, false);
+    assert.equal(persisted.route.verification, "failed");
+    assert.equal(persisted.route.failureCode, "model_unroutable");
+    const status = await service.status(persisted.taskId);
+    assert.deepEqual(status.route, persisted.route);
+    assert.equal(status.coordinationFailure?.code, "model_unroutable");
     assert.equal(api.calls.some((call) => call.method === "session.prompt"), false);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("delegate never claims or prompts when the initial route record cannot persist", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-dsh-service-"));
+  try {
+    class FailingTaskStore extends TaskStore {
+      override async create(): Promise<never> {
+        throw new Error("simulated route persistence failure");
+      }
+    }
+    const api = new FakeDshApi();
+    const tasks = new FailingTaskStore(home);
+    const ledger = new EventLedger(home);
+    const service = new BridgeService(config(home), api, tasks, new FakeConnection(ledger), ledger);
+
+    await assert.rejects(
+      () => service.delegate({ prompt: "work", cwd: home }),
+      (error: unknown) => error instanceof DelegationSetupError && error.stage === "mapping",
+    );
+    assert.equal(api.calls.some((call) => call.method === "session.create"), true);
+    assert.equal(api.calls.some((call) => call.method === "session.models"), false);
+    assert.equal(api.calls.some((call) => call.method === "session.prompt"), false);
+    assert.deepEqual(await new WorkspaceClaimStore(home).list(), []);
   } finally {
     await rm(home, { recursive: true, force: true });
   }
@@ -458,7 +492,14 @@ test("manual preset delegation verifies roster then create then mapping/track th
     const modelsIdx = methods.indexOf("session.models");
     const promptIdx = methods.indexOf("session.prompt");
     assert.ok(rosterIdx >= 0 && rosterIdx < createIdx && createIdx < modelsIdx && modelsIdx < promptIdx);
-    assert.equal((await tasks.list()).length, 1);
+    const [persisted] = await new TaskStore(home).list();
+    assert.ok(persisted?.route);
+    assert.equal(persisted.route.launchStage, "prompt-sent");
+    assert.equal(persisted.route.promptSent, true);
+    assert.equal(persisted.route.verification, "verified");
+    const status = await service.status(delegated.taskId);
+    assert.deepEqual(status.route, persisted.route);
+    assert.equal(status.coordinationFailure, null);
   } finally {
     await rm(home, { recursive: true, force: true });
   }
@@ -538,9 +579,16 @@ test("manual preset delegation mismatch retains mapping and does not claim, read
     );
     const [mappedTask] = await tasks.list();
     assert.ok(mappedTask);
+    assert.equal(mappedTask.route?.launchStage, "launch-failed");
+    assert.equal(mappedTask.route?.verification, "failed");
+    assert.equal(mappedTask.route?.failureCode, "resolved_preset_mismatch");
+    assert.equal(mappedTask.route?.promptSent, false);
     assert.equal(await new WorkspaceClaimStore(home).get(mappedTask.taskId), undefined);
     assert.equal(api.calls.some((call) => call.method === "session.models"), false);
     assert.equal(api.calls.some((call) => call.method === "session.prompt"), false);
+    const status = await service.status(mappedTask.taskId);
+    assert.equal(status.coordinationFailure?.code, "resolved_preset_mismatch");
+    assert.equal(status.coordinationFailure?.promptSent, false);
   } finally {
     await rm(home, { recursive: true, force: true });
   }
@@ -561,6 +609,39 @@ test("manual preset delegation with absent resolved preset continues as verifica
     assert.equal(delegated.verification, "unavailable");
     assert.equal(delegated.requestedPreset, "preset-1");
     assert.equal("resolvedPreset" in delegated, false);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("manual preset delegation rechecks live preset immediately before prompt and records a late mismatch", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-dsh-service-"));
+  try {
+    const api = new FakeDshApi();
+    api.agentPresets = [{ id: "preset-1", trust: "user", isDefault: false }];
+    api.sessionModelsAgentPreset = "externally-selected-preset";
+    const tasks = new TaskStore(home);
+    const ledger = new EventLedger(home);
+    const service = new BridgeService(config(home), api, tasks, new FakeConnection(ledger), ledger);
+
+    await assert.rejects(
+      () => service.delegate({ prompt: "work", cwd: home, agentPreset: "preset-1" }),
+      (error: unknown) =>
+        error instanceof BridgeCapabilityError &&
+        error.code === "resolved_preset_mismatch" &&
+        error.details.requestedPreset === "preset-1" &&
+        error.details.resolvedPreset === "externally-selected-preset" &&
+        error.details.promptSent === false,
+    );
+
+    const methods = api.calls.map((call) => call.method);
+    assert.ok(methods.indexOf("session.models") < methods.indexOf("session.list"));
+    assert.equal(methods.includes("session.prompt"), false);
+    const [mappedTask] = await new TaskStore(home).list();
+    assert.equal(mappedTask?.route?.launchStage, "launch-failed");
+    assert.equal(mappedTask?.route?.failureCode, "resolved_preset_mismatch");
+    assert.equal(mappedTask?.route?.resolvedPreset, "externally-selected-preset");
+    assert.equal((await new WorkspaceClaimStore(home).get(mappedTask!.taskId))?.mode, "exclusive-write");
   } finally {
     await rm(home, { recursive: true, force: true });
   }
