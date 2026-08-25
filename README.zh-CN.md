@@ -140,7 +140,7 @@ DSH 为复杂任务提供持久 session、工具调用、subagent 和人工监�
 - `dsh_continue` — `dsh_followup` 的兼容别名
 - `dsh_status` — 返回 availability、execution、无内容的启动路由/失败状态、lineage、queue、pending interaction、final message、cursors 和 workspace claim semantics
 - `dsh_tail` — 使用 bridge task cursor 读取有界事件摘要
-- `dsh_wait` — 最多等待 30 秒，直到出现 durable event、状态变化、pending interaction 或 terminal 状态
+- `dsh_wait` — 最多等待 30 秒；默认只在当前 turn 为 terminal、出现需要响应的 interaction、Host 可用性丢失或超时时返回，并吞掉期间普通的 cursor/queue/status 波动（用 `until="change"` 在任意状态变化时唤醒，用 `responseMode="full"` 获取诊断用完整状态快照）
 - `dsh_observe` — `dsh_wait` 的兼容别名；bridge cursor 取代原始 per-session seq cursor
 - `dsh_cancel` — `scope="turn"|"queue"`
 - `dsh_list` — 列出 task mapping，并附带当前派生状态
@@ -150,7 +150,7 @@ DSH 为复杂任务提供持久 session、工具调用、subagent 和人工监�
 
 正常委派没有 model 参数。目标模型只在安装或调整 DSH 时配置。每次 delegate 都会读取 `session.models.current` 并信任 Host 返回的 `routable`；bridge 不会修改模型，也不会根据 catalog group 自行推导 routability。
 
-`dsh_wait` 只观察 bridge 的持久化状态。assistant delta/chunk 帧和顶层 `session/projection` snapshot 会被跳过，因此不会 bump task revision，也不会唤醒 waiter；turn 结束后的完整 final message 仍可通过 status/tail 观察。
+默认情况下，`dsh_wait` 以 `until="terminal"`、`responseMode="compact"` 返回：它在同一次有界的 MCP 调用内部消化普通的 cursor、queue 和 status 波动，只会在当前 turn 为 terminal、出现 pending question/approval、Host/session 可用性丢失或超时时唤醒调用方。compact 输出只包含调用方可操作字段外加 `wakeReason`，因此 durable tool/session 事件不再淹没调用方上下文。assistant delta/chunk 帧和顶层 `session/projection` snapshot 仍会被完全跳过，永不 bump task revision。如需保留旧版诊断行为（每次可观察变化都唤醒并返回完整状态快照），请传入 `until="change"` 和 `responseMode="full"`。turn 结束后的完整 final message 仍可通过 status/tail 观察。
 
 ## 后续方向
 
