@@ -175,7 +175,7 @@ interface AgentlinkWindow extends Window {
       ctx.effect(() => ctx.slots.inject("details", () => {
         registerDetails = () => {
           disposeDetails ??= ctx.slots.register({ name: "details", priority: -100,
-            inject: () => ({ remote, closePanel, nativeDetails, openSession: (session: any) => session.subagentAddress ? ctx.sessions.openSubagent(session.subagentAddress) : ctx.sessions.open(session.sessionId) }),
+            inject: () => ({ remote, closePanel, nativeDetails, sessionId: openedFor, openSession: (session: any) => session.subagentAddress ? ctx.sessions.openSubagent(session.subagentAddress) : ctx.sessions.open(session.sessionId) }),
           }, AgentlinkDetails);
         };
         return () => { registerDetails = undefined; release(); };

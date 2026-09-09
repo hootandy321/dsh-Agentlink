@@ -1401,10 +1401,18 @@ export class BridgeService {
     if (timeoutSec === 0) return { timedOut: true, reason: "timeout", status: initial, nextCursor: initial.cursor };
     const deadline = Date.now() + timeoutSec * 1_000;
     let status = initial;
+    // The attention/activity decision always compares against the caller's
+    // original baseline cursor. The blocking baseline is separate: after each
+    // ignored non-attention change the ledger cursor and connection revision
+    // are already newer, so reusing the original baseline would make every
+    // subsequent waitForTaskChange return immediately and turn the wait into a
+    // status()-RPC busy loop until an attention event or the deadline.
+    let waitCursor = cursor;
+    let waitRevision = initial.connection.revision;
     while (true) {
       const remainingMs = deadline - Date.now();
       if (remainingMs <= 0) return { timedOut: true, reason: "timeout", status, nextCursor: status.cursor };
-      const change = await this.connection.waitForTaskChange(taskId, cursor, initial.connection.revision, remainingMs);
+      const change = await this.connection.waitForTaskChange(taskId, waitCursor, waitRevision, remainingMs);
       status = await this.status(taskId);
       const reason =
         wakeOn === "activity" && status.cursor > cursor
@@ -1412,6 +1420,8 @@ export class BridgeService {
           : waitAttentionReason(status, cursor, sinceCursor !== undefined);
       if (reason !== undefined) return { timedOut: false, reason, status, nextCursor: status.cursor };
       if (change.timedOut) return { timedOut: true, reason: "timeout", status, nextCursor: status.cursor };
+      waitCursor = status.cursor;
+      waitRevision = status.connection.revision;
     }
   }
 
@@ -1527,6 +1537,11 @@ export class BridgeService {
   async listTasks() {
     const tasks = await this.tasks.list();
     const connection = this.connection.snapshot();
+    // Mirror status(): refresh the lineage once so a root session deleted on
+    // the Host is actually observed before deriving per-task availability. On
+    // refresh failure keep the cached lineage (the previous list behavior).
+    if (connection.availability === "connected") await this.connection.refreshLineage().catch(() => undefined);
+    const refreshed = this.connection.snapshot();
     return Promise.all(
       tasks.map(async (task) => {
         try {
@@ -1534,17 +1549,20 @@ export class BridgeService {
           const attribution = await this.attribution.task(task.taskId);
           const ledger = await this.ledger.snapshot(task.taskId);
           const workspaceClaim = await this.claims.get(task.taskId);
-          const availability = connection.availability === "connected" ? "connected" : "host_unreachable";
-          const pending = connection.availability === "connected" ? this.connection.pendingForTask(task.taskId) : [];
+          const lineage = refreshed.availability === "connected" ? this.connection.lineageForTask(task.taskId) : [];
+          const rootFound = lineage.find((row) => row.sessionId === task.sessionId)?.found === true;
+          const availability: TaskAvailability =
+            refreshed.availability !== "connected" ? "host_unreachable" : rootFound ? "connected" : "session_not_found";
+          const pending = availability === "connected" ? this.connection.pendingForTask(task.taskId) : [];
           const queue =
-            connection.availability === "connected"
+            availability === "connected"
               ? this.connection.queueForSession(task.sessionId)
-              : { known: false, stale: false, connectionEpoch: connection.connectionEpoch, items: [] };
+              : { known: false, stale: false, connectionEpoch: refreshed.connectionEpoch, items: [] };
           return statusShape(
             task,
-            connection,
+            refreshed,
             ledger,
-            connection.availability === "connected" ? this.connection.lineageForTask(task.taskId) : [],
+            lineage,
             availability,
             interactionExecution(pending) ?? ledger.execution,
             pending,

@@ -640,14 +640,135 @@ test("listTasks returns lightweight summaries without resolving final message bo
         event: { type: "turn/end", seq: 2, time: 3, data: { turn: 1, reason: { kind: "completed" } } },
       },
     });
-    const service = new BridgeService(config(home), api, tasks, new FakeConnection(ledger), ledger);
+    const connection = new FakeConnection(ledger);
+    connection.lineage = [
+      { sessionId: "root-session", found: true, origin: "root", running: false, blank: false, historyCapability: "session.history" },
+    ];
+    const service = new BridgeService(config(home), api, tasks, connection, ledger);
 
     const [summary] = await service.listTasks();
 
     assert.equal(summary.taskId, task.taskId);
+    assert.equal(summary.availability, "connected");
     assert.equal(summary.finalMessage, null);
     assert.equal(summary.finalMessageStatus, "pointer_available");
     assert.equal(api.calls.some((call) => call.method === "session.history"), false);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("listTasks reports a deleted root session as session_not_found while the Host stays connected", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-dsh-service-"));
+  try {
+    const api = new FakeDshApi();
+    const tasks = new TaskStore(home);
+    const task = await tasks.create("root-session");
+    const ledger = new EventLedger(home);
+    await ledger.append(task.taskId, {
+      sourceSessionId: "root-session",
+      sourceSeq: 0,
+      origin: "root",
+      type: "session/event",
+      raw: {
+        type: "session/event",
+        sessionId: "root-session",
+        event: { type: "turn/start", seq: 0, time: 1, data: { turn: 1 } },
+      },
+    });
+    const connection = new FakeConnection(ledger);
+    connection.pending = [
+      {
+        type: "server-request",
+        rpcId: "stale-question",
+        method: "question/requested",
+        payload: {
+          type: "question/requested",
+          sessionId: "root-session",
+          questions: [{ id: "q", question: "stale" }],
+        },
+      },
+    ];
+    connection.queue = {
+      known: true,
+      stale: false,
+      connectionEpoch: 1,
+      items: [{ id: "stale-item", placement: "queued", message: { role: "user", content: [] } }],
+    };
+    connection.lineage = [
+      { sessionId: "root-session", found: false, origin: "root", historyCapability: "session.history" },
+    ];
+    const service = new BridgeService(config(home), api, tasks, connection, ledger);
+
+    const [summary] = await service.listTasks();
+
+    assert.equal(summary.availability, "session_not_found");
+    assert.equal(summary.status, "unknown");
+    assert.deepEqual(summary.pendingInteractions, []);
+    assert.deepEqual(summary.queueDepth, {
+      known: false,
+      stale: false,
+      nextTurn: 0,
+      nextStep: 0,
+      steering: 0,
+      context: 0,
+      total: 0,
+    });
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("wait advances the blocking cursor/revision after ignored non-attention changes", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-dsh-service-"));
+  try {
+    const api = new FakeDshApi();
+    api.sessions = [{ sessionId: "root-session", updatedAt: 2, running: true, blank: false }];
+    const tasks = new TaskStore(home);
+    const task = await tasks.create("root-session");
+    const ledger = new EventLedger(home);
+    const connection = new FakeConnection(ledger);
+    connection.lineage = [
+      { sessionId: "root-session", found: true, origin: "root", running: true, blank: false, historyCapability: "session.history" },
+    ];
+    const service = new BridgeService(config(home), api, tasks, connection, ledger);
+
+    const waits: Array<{ afterCursor: number; afterRevision: number }> = [];
+    let calls = 0;
+    connection.waitForTaskChange = async (taskId, afterCursor, afterRevision, waitMs) => {
+      calls += 1;
+      waits.push({ afterCursor, afterRevision });
+      if (calls === 1) {
+        // Ordinary progress: the ledger advances past the baseline without an
+        // attention-worthy event; the mux-driven connection state change also
+        // bumps the connection revision, like the real runtime would.
+        await ledger.append(task.taskId, {
+          sourceSessionId: "root-session",
+          origin: "root",
+          type: "session/event",
+          raw: {
+            type: "session/event",
+            sessionId: "root-session",
+            event: { type: "tool/call", seq: 0, time: 1, data: { name: "read" } },
+          },
+        });
+        connection.state = { ...connection.state, revision: connection.state.revision + 1 };
+        return { timedOut: false, connection: connection.snapshot(), ledger: await ledger.snapshot(taskId) };
+      }
+      return { timedOut: true, connection: connection.snapshot(), ledger: await ledger.snapshot(taskId) };
+    };
+
+    const initialCursor = (await ledger.snapshot(task.taskId)).cursor;
+    const result = await service.wait(task.taskId, 2, undefined, "attention");
+
+    assert.equal(result.timedOut, true);
+    assert.equal(result.reason, "timeout");
+    assert.equal(calls, 2);
+    assert.deepEqual(waits[0], { afterCursor: initialCursor, afterRevision: 1 });
+    // After the ignored change the blocking baseline moved to the observed
+    // status cursor/revision instead of reusing the original values.
+    assert.equal(waits[1]!.afterCursor > waits[0]!.afterCursor, true);
+    assert.equal(waits[1]!.afterRevision > waits[0]!.afterRevision, true);
   } finally {
     await rm(home, { recursive: true, force: true });
   }
