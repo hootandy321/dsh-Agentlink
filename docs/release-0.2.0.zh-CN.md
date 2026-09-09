@@ -32,7 +32,7 @@
 
 ### `wait` 默认关注需要处理的事件
 
-`dsh_wait` 默认使用 `wakeOn="attention"`。任务结束、收到问题或审批、连接/恢复异常以及截止时间到达时返回；普通工具进度、assistant delta、chunk 和 projection snapshot 会在 bridge 内推进观察位置，但不会单独唤醒主 agent。需要进度条或实时过程的调用方可以显式使用 `wakeOn="activity"`。
+`dsh_wait` 默认使用 `wakeOn="attention"`。任务结束、收到问题或审批、连接/恢复异常以及截止时间到达时返回；普通工具事件推进观察位置，但不会单独唤醒主 agent；assistant delta、chunk 和顶层 projection snapshot 等流式噪声被跳过。需要进度条或实时过程的调用方可以显式使用 `wakeOn="activity"`。
 
 结束时可以直接取得最终结果；阻塞时返回对应交互；超时时返回短状态和原因。`dsh_observe` 继续作为兼容别名。等待使用 bridge 自己的持久游标，避免调用方重复消费同一个状态。
 

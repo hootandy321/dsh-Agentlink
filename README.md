@@ -156,12 +156,12 @@ The caller can then delegate the task, observe its event stream, continue the sa
 - `dsh_delegate` — create a root session and queue the initial prompt; detached by default (`waitSeconds=0`); `workspaceMode` is a bridge-local claim, not a DSH sandbox selector
 - `dsh_followup` — continue the same root session with explicit `mode="queue"|"steer"` (default `queue`)
 - `dsh_continue` — compatibility alias for `dsh_followup`
-- `dsh_status` — availability, execution, content-free launch route/failure state, lineage, queue, pending interactions, final message, cursors, and workspace claim semantics
+- `dsh_status` — compact availability/execution/cursor summary; select result, interactions, launch route, lineage, connection, cost, and workspace claim semantics through `include`
 - `dsh_tail` — bounded event digests using a bridge task cursor
-- `dsh_wait` — wait up to 30 seconds for a durable event, state change, pending interaction, or terminal status
+- `dsh_wait` — wait up to 30 seconds for attention, termination, or an exception; opt into `wakeOn="activity"` for ordinary progress
 - `dsh_observe` — compatibility alias around `dsh_wait`; bridge cursors replace raw session seq cursors
 - `dsh_cancel` — `scope="turn"|"queue"`
-- `dsh_list` — task mappings enriched with current derived status
+- `dsh_list` — compact task summaries with optional detail categories
 - `dsh_answer_question` — typed answer for a pending question rpcId
 - `dsh_resolve_approval` — typed `allow_once|reject` response for a pending approval rpcId
 - `dsh_release_workspace` — explicitly release a persistent bridge workspace claim without closing the DSH session

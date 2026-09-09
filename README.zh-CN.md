@@ -156,9 +156,9 @@ DSH 为复杂任务提供持久 session、工具调用、subagent 和人工监�
 - `dsh_delegate` — 创建 root session 并排队初始 prompt；默认 detached（`waitSeconds=0`）；`workspaceMode` 是 bridge-local claim，不是 DSH sandbox selector
 - `dsh_followup` — 以显式 `mode="queue"|"steer"` 继续同一个 root session；默认 `queue`
 - `dsh_continue` — `dsh_followup` 的兼容别名
-- `dsh_status` — 返回 availability、execution、无内容的启动路由/失败状态、lineage、queue、pending interaction、final message、cursors 和 workspace claim semantics
+- `dsh_status` — 默认返回 availability、execution 和 cursor 摘要；通过 `include` 选择结果、交互、启动路由、lineage、连接、费用和 workspace claim semantics
 - `dsh_tail` — 使用 bridge task cursor 读取有界事件摘要
-- `dsh_wait` — 最多等待 30 秒，直到出现 durable event、状态变化、pending interaction 或 terminal 状态
+- `dsh_wait` — 最多等待 30 秒，默认在需要处理、结束或异常时返回；普通进度需显式选 `wakeOn="activity"`
 - `dsh_observe` — `dsh_wait` 的兼容别名；bridge cursor 取代原始 per-session seq cursor
 - `dsh_cancel` — `scope="turn"|"queue"`
 - `dsh_list` — 列出 task mapping，并附带当前派生状态
