@@ -28,7 +28,7 @@ args = ["/absolute/path/to/dsh-Agentlink/dist/index.js"]
 
 [mcp_servers.dsh_agentlink.env]
 DSH_HOST_URL = "http://127.0.0.1:3080"
-DSH_HOST_VERSION = "0.1.0-rc.6"
+DSH_HOST_VERSION = "0.1.2-rc.1"
 DSH_BRIDGE_AGENT_PRESET = "code"
 
 [mcp_servers.dsh_agentlink.tools.dsh_resolve_approval]
@@ -43,6 +43,9 @@ approval_mode = "prompt"
 
 ## 环境变量
 
+- `DSH_HOST_COOKIE` — 已通过 Host 启动链接换取的签名 cookie（完整 `name=value`），可跨 Host 重启使用；作为凭据保密存放，到期后重新换取。
+- `DSH_HOST_TOKEN` — 正式版 Host 启动链接中的 token，通过环境传递；不要把 token 写进 Host URL。
+- `DSH_BRIDGE_PROTOCOL` — 默认 `remote`（0.1.2-rc.1）；旧 Host 可显式选择 `legacy`。
 - `DSH_HOST_URL` — 官方 Web Host origin；默认 `http://127.0.0.1:3080`
 - `DSH_HOME` — 用于推导 bridge home 的 DSH home；默认 `~/.dsh`
 - `DSH_BRIDGE_HOME` — task mapping、workspace claim 与 coordination index 的目录覆盖值
@@ -53,7 +56,7 @@ approval_mode = "prompt"
 - `DSH_APPROVAL_TIMEOUT_MS` — 默认关闭；启用后，仅在当前 bridge 进程和连接仍存活时尝试一次 best-effort reject
 - `DSH_ALLOW_REMOTE_HOST=true` — 显式允许受信任的非 loopback Host
 
-正常委派没有 model 参数。请在 DSH 中配置目标模型；每次委派都会读取 Host 当前的模型路由。
+DSH 执行模型由 Host 配置决定。新增的 `caller.model` 仅用于主模型 API 价格对照，不改变 DSH 路由；同一个完整任务的多个委派复用返回的 `runId`。主模型未知时不猜测价格。
 
 ## Host 与版本说明
 
@@ -64,10 +67,10 @@ dsh web --host 127.0.0.1 --port 3080
 npm run doctor
 ```
 
-当前经过测试的目标是 DSH CLI `0.1.0-rc.6`。在 rc.6 中，`host.describe.version` 会返回占位产品版本 `0.0.1`，它不是 CLI/package 版本。doctor 会分别检查 CLI 版本与 Host capability，并只读报告 `DSH_BRIDGE_HOME` 下的 fail-closed 锁位置（`claims/registry.lock` 与 `ledgers/<task>/events.lock`），从不清理它们。锁诊断只输出结构性的 presence/type 与有界的 `entriesObserved`/`entriesTruncated` 观察；绝不读取 `owner.json` 内容，也不报告 pid、token 或 `createdAt`。
+当前经过测试的目标是 DSH CLI `0.1.2-rc.1`。在 rc.6 中，`host.describe.version` 会返回占位产品版本 `0.0.1`，它不是 CLI/package 版本。doctor 会分别检查 CLI 版本与 Host capability，并只读报告 `DSH_BRIDGE_HOME` 下的 fail-closed 锁位置（`claims/registry.lock` 与 `ledgers/<task>/events.lock`），从不清理它们。锁诊断只输出结构性的 presence/type 与有界的 `entriesObserved`/`entriesTruncated` 观察；绝不读取 `owner.json` 内容，也不报告 pid、token 或 `createdAt`。
 
 本次 ingestion 修复不会自动压缩已有的 5 MB 以上 ledger。请保留旧 bridge home 备查；如有需要，可为新的委派配置独立的 `DSH_BRIDGE_HOME`，但其中的 bridge task id、cursor 与 claim 会重新开始。DSH `session.history` 始终是权威对话记录。文档有意不提供自动清理 ledger 或锁的命令。
 
-rc.6 Web API 没有 auth token，因此 loopback-only 是安全默认值。远程 URL 必须是用户明确信任的部署，并同时设置 `DSH_ALLOW_REMOTE_HOST=true`。
+0.1.2-rc.1 使用启动 token 换签名 cookie；bridge 从 `DSH_HOST_TOKEN` 读取 token，在内存中保留 cookie。loopback-only 仍是安全默认值。远程 URL 必须是用户明确信任的部署，并同时设置 `DSH_ALLOW_REMOTE_HOST=true`。不要在共享日志或版本库中保存 token。
 
-dsh-Agentlink 不是 DSH Cordis bundle，请不要使用 `dsh plugin --profile ... add ...` 安装。
+根目录 dsh-Agentlink 是调用侧 MCP，不是 DSH Cordis bundle。右栏和费用采集由独立的 [dsh-plugin 配套包](../dsh-plugin/README.md) 提供，按该包的说明安装。

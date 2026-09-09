@@ -219,6 +219,7 @@ test("bridge process exits cleanly when MCP stdin reaches EOF", { timeout: 10_00
       env: {
         ...inheritedEnv,
         DSH_HOST_URL: host.baseUrl,
+        DSH_BRIDGE_PROTOCOL: "legacy",
         DSH_BRIDGE_HOME: home,
         DSH_REQUEST_TIMEOUT_MS: "500",
       },

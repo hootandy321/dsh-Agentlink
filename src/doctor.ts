@@ -6,12 +6,12 @@ import { pathToFileURL } from "node:url";
 
 import type { BridgeConfig } from "./config.js";
 import { loadConfig } from "./config.js";
-import { DshClient } from "./dsh-client.js";
+import { createDshClient } from "./client-factory.js";
 import type { DshApi } from "./dsh-types.js";
 import { collectLockDiagnostics } from "./lock-doctor.js";
 
 const execFileAsync = promisify(execFile);
-const TESTED_CLI_VERSION = "0.1.0-rc.6";
+const TESTED_CLI_VERSION = "0.1.2-rc.1";
 
 export type CliVersionProbe = () => Promise<string | undefined>;
 
@@ -138,7 +138,7 @@ export async function runDoctor(
 
 async function main() {
   const config = loadConfig();
-  const report = await runDoctor(config, new DshClient(config.hostUrl, config.requestTimeoutMs));
+  const report = await runDoctor(config, createDshClient(config));
   const output = JSON.stringify(report, null, 2);
   if (report.ok) console.log(output);
   else {

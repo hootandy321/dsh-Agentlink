@@ -8,6 +8,8 @@
 
 dsh-Agentlink 是一个让你直接在原本的 AI 工作工具里调用 DeepSeek Harness（DSH）协作的插件。你的主 agent 可以把实现、调研、调试和长日志整理等任务交给 DSH，再在原有工作流中观察、继续或取消对应会话。当前支持 Codex，后续计划持续适配 Claude Code、Workbuddy 等主流 AI coding 与 agent 工具。
 
+默认监督只返回短状态；详情由 `include` 选择。相同任务的多次委派可复用 `runId`，并传入主模型 `caller.model`。DSH 右栏来源导航和成本估算由独立的 [DSH 配套插件](dsh-plugin/README.md) 提供。
+
 ## 安装
 
 安装前先准备环境：只需要 **Node.js 22+**、**Codex** 和可以正常运行的 **DSH CLI**。先在 DSH 中配置一次你希望使用的模型，之后 dsh-Agentlink 会自动使用当前路由。
@@ -26,7 +28,7 @@ dsh-Agentlink 是一个让你直接在原本的 AI 工作工具里调用 DeepSee
 
 ### 手动安装
 
-1. 检查环境。当前经过测试的 DSH CLI 目标是 `0.1.0-rc.6`。
+1. 检查环境。当前经过测试的 DSH CLI 目标是 `0.1.2-rc.1`。
 
    ```bash
    node --version
@@ -38,6 +40,8 @@ dsh-Agentlink 是一个让你直接在原本的 AI 工作工具里调用 DeepSee
    ```bash
    dsh web
    ```
+
+   正式版 Host 启动链接含 token。通过 `DSH_HOST_TOKEN` 环境变量将它提供给 MCP 进程；Host 地址仍只填 origin，详见[手动配置](docs/manual-configuration.zh-CN.md)。
 
 3. 克隆仓库、安装依赖并运行配置向导。
 
@@ -62,7 +66,7 @@ dsh-Agentlink 是一个让你直接在原本的 AI 工作工具里调用 DeepSee
 
 当前源码补丁会阻止新的 projection/chunk 洪峰继续扩大 coordination ledger，但不会自动压缩已有的 5 MB 以上 ledger。请保留旧 bridge home 备查；新的委派可以选择独立的 `DSH_BRIDGE_HOME`。对话真源始终是 DSH `session.history`，不是 bridge ledger。保守恢复边界见[已知问题](KNOWN_ISSUES.md)。
 
-dsh-Agentlink 是安装在调用方一侧的插件，不是 DSH Cordis bundle；请不要使用 `dsh plugin --profile ... add ...` 安装。
+根目录 dsh-Agentlink 是调用侧 MCP，不是 DSH Cordis bundle；不要用 `dsh plugin` 安装根目录。`dsh-plugin/` 是另行构建安装的 DSH 配套插件。
 
 ## 为什么需要 dsh-Agentlink？
 

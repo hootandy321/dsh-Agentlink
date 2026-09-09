@@ -29,3 +29,15 @@ jobs:
 
       - name: Inspect package contents
         run: npm pack --dry-run --ignore-scripts
+
+      - name: Install DSH companion dependencies
+        working-directory: dsh-plugin
+        run: npm ci
+
+      - name: Build and test DSH companion
+        working-directory: dsh-plugin
+        run: npm run check
+
+      - name: Inspect DSH companion package
+        working-directory: dsh-plugin
+        run: npm pack --dry-run --ignore-scripts

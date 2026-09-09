@@ -1,0 +1,6 @@
+# dsh-agentlink-dsh-plugin bundle patch: adds the Host-side Agentlink
+# cost/source service. The browser half is loaded from the package dsh.client
+# manifest by DSH Web.
+- insert:
+    - id: dsh-agentlink-dsh-plugin
+      name: dsh-agentlink-dsh-plugin

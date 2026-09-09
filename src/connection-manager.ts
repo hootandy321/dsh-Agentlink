@@ -18,7 +18,7 @@ import type {
 } from "./dsh-types.js";
 import type { TaskRecord, TaskStore } from "./task-store.js";
 
-export const TESTED_DSH_VERSION = "0.1.0-rc.6";
+export const TESTED_DSH_VERSION = "0.1.2-rc.1";
 
 export type HostAvailability = "connecting" | "connected" | "host_unreachable" | "stopped";
 
@@ -366,6 +366,7 @@ export class DshConnectionManager implements DshConnection {
       this.queues.delete(sessionId);
     }
     await this.resolveSubagentAddresses();
+    this.api.trackSessions?.([...this.lineage.values()].flat().filter((row) => row.found).map((row) => ({ sessionId: row.sessionId, ...(this.subagentAddresses.get(row.sessionId) ?? {}) })));
     if (lineageSignature(this.lineage) !== before) this.bumpRevision();
   }
 

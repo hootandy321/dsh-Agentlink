@@ -5,14 +5,14 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { BridgeService } from "./bridge-service.js";
 import { loadConfig } from "./config.js";
 import { DshConnectionManager } from "./connection-manager.js";
-import { DshClient } from "./dsh-client.js";
+import { createDshClient } from "./client-factory.js";
 import { EventLedger } from "./event-ledger.js";
 import { createMcpServer } from "./mcp-server.js";
 import { TaskStore } from "./task-store.js";
 
 async function main() {
   const config = loadConfig();
-  const api = new DshClient(config.hostUrl, config.requestTimeoutMs);
+  const api = createDshClient(config);
   const tasks = new TaskStore(config.homeDir);
   const ledger = new EventLedger(config.homeDir);
   const connection = new DshConnectionManager(config, api, tasks, ledger);
@@ -46,6 +46,13 @@ async function main() {
   });
 
   connection.start();
+  void service.syncAttribution().then((sync) => {
+    if (sync.warnings.length > 0) {
+      console.error(`[dsh-agentlink] attribution sync warnings: ${sync.warnings.slice(0, 3).join("; ")}`);
+    }
+  }).catch((error: unknown) => {
+    console.error(`[dsh-agentlink] attribution sync failed: ${error instanceof Error ? error.message : String(error)}`);
+  });
   await server.connect(transport);
   console.error(`[dsh-agentlink] connect-only MCP ready; configured DSH Host ${config.hostUrl}`);
 }

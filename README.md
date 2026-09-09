@@ -8,6 +8,8 @@
 
 dsh-Agentlink is a plugin that lets you use DeepSeek Harness (DSH) from the AI work tool you already use. Your primary agent can delegate implementation, research, debugging, and long-log work to DSH, then observe, continue, or cancel those sessions without leaving its normal workflow. Codex is supported today; Claude Code, Workbuddy, and other popular AI coding and agent tools are planned.
 
+Supervision now returns compact status by default, with details selected through `include`. Reuse `runId` across delegated sessions and pass the caller model for API price comparisons. The separate [DSH companion plugin](dsh-plugin/README.md) provides source navigation and cost estimates.
+
 ## Installation
 
 Prepare the environment first: you need **Node.js 22+**, **Codex**, and a working **DSH CLI**. Configure your preferred model in DSH once; dsh-Agentlink uses that live route automatically.
@@ -26,7 +28,7 @@ Do not start or stop dsh web for me. Tell me when I need to restart Codex.
 
 ### Manual installation
 
-1. Check the environment. DSH CLI `0.1.0-rc.6` is the current tested target.
+1. Check the environment. DSH CLI `0.1.2-rc.1` is the current tested target.
 
    ```bash
    node --version
@@ -38,6 +40,8 @@ Do not start or stop dsh web for me. Tell me when I need to restart Codex.
    ```bash
    dsh web
    ```
+
+   Pass the Host launch token to the MCP process through `DSH_HOST_TOKEN`; keep `DSH_HOST_URL` as the origin only. The default transport targets DSH `0.1.2-rc.1`.
 
 3. Clone, install, and run the setup wizard.
 
@@ -62,7 +66,7 @@ Use `/mcp` or Codex Settings to confirm that `dsh_agentlink` is connected. The d
 
 This source patch stops new projection/chunk floods from expanding the coordination ledger, but it does not compact an existing 5 MB+ ledger. Preserve the old bridge home for inspection; new delegations can use a separate `DSH_BRIDGE_HOME`. DSH `session.history`, not the bridge ledger, remains the conversation source of truth. See [Known issues](KNOWN_ISSUES.md) for the conservative recovery boundary.
 
-dsh-Agentlink is a caller-side plugin, not a DSH Cordis bundle. Do not install it with `dsh plugin --profile ... add ...`.
+The root dsh-Agentlink package is a caller-side MCP, not a DSH Cordis bundle. Do not install it with `dsh plugin --profile ... add ...`. The separate `dsh-plugin/` package is the installable DSH companion; follow its own README.
 
 ## Why dsh-Agentlink?
 

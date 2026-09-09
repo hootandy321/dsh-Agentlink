@@ -54,13 +54,13 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.5",
+    "ws": "^8.21.3",
     "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@types/ws": "^8.18.1",
     "tsx": "^4.20.3",
-    "typescript": "^5.8.3",
-    "ws": "^8.18.3"
+    "typescript": "^5.8.3"
   }
 }

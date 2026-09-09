@@ -85,6 +85,7 @@ test("a separate bridge process reconnects after mock Host restart and rebuilds 
         ...inheritedEnv,
         DSH_HOST_URL: firstHost.baseUrl,
         DSH_BRIDGE_HOME: home,
+        DSH_BRIDGE_PROTOCOL: "legacy",
         DSH_REQUEST_TIMEOUT_MS: "500",
       },
       stderr: "pipe",
@@ -93,7 +94,9 @@ test("a separate bridge process reconnects after mock Host restart and rebuilds 
     await client.connect(transport);
 
     const initial = await eventually(async () => {
-      const status = toolJson(await client!.callTool({ name: "dsh_status", arguments: { taskId: task.taskId } }));
+      const status = toolJson(
+        await client!.callTool({ name: "dsh_status", arguments: { taskId: task.taskId, include: ["result"] } }),
+      );
       return status.availability === "connected" && status.finalMessage === "survived host restart" ? status : undefined;
     });
     assert.equal(initial.execution, "turn_completed");
@@ -108,7 +111,12 @@ test("a separate bridge process reconnects after mock Host restart and rebuilds 
     secondHost = await startMockDshHost({ port });
     installDurableHostState(secondHost);
     const recovered = await eventually(async () => {
-      const status = toolJson(await client!.callTool({ name: "dsh_status", arguments: { taskId: task.taskId } }));
+      const status = toolJson(
+        await client!.callTool({
+          name: "dsh_status",
+          arguments: { taskId: task.taskId, include: ["result", "connection"] },
+        }),
+      );
       return status.availability === "connected" && status.finalMessage === "survived host restart" ? status : undefined;
     });
     assert.deepEqual(recovered.finalMessagePointer, { sessionId: "durable-session", seq: 1 });

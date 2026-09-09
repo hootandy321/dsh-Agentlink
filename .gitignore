@@ -8,3 +8,8 @@ coverage/
 .env.*
 !.env.example
 .dsh-bridge/
+
+dsh-plugin/lib/
+
+# Machine-specific installation notes and backup locations
+docs/local-installation-*.md

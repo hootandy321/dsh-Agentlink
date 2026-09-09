@@ -44,6 +44,8 @@ export class FakeDshApi implements DshApi {
   respondReceipt: DshRpcReceipt = { accepted: true };
   nextSessionId = "root-session";
   updateQueueErrors = new Map<string, Error>();
+  companionErrors = new Map<string, Error>();
+  companionSummaries = new Map<string, Record<string, unknown>>();
   private rpcSeq = 0;
 
   private unary<T extends object>(method: string, value: T): DshUnaryResult<T> {
@@ -125,6 +127,43 @@ export class FakeDshApi implements DshApi {
     return this.respondReceipt;
   }
 
+  async companion(method: string, input: Record<string, unknown>) {
+    this.calls.push({ method: `agentlink.${method}`, payload: input });
+    const error = this.companionErrors.get(method);
+    if (error !== undefined) throw error;
+    if (method === "registerInvocation") {
+      return {
+        runId: input.runId,
+        taskId: input.taskId,
+        rootSessionId: input.rootSessionId,
+        submissionId: "remote-submission-1",
+        registered: true,
+      };
+    }
+    if (method === "registerSubmission") {
+      return {
+        submissionId: "remote-submission-2",
+        runId: input.runId,
+        taskId: input.taskId,
+        sessionId: input.sessionId,
+        caller: input.caller,
+        status: "active",
+        submittedAt: new Date().toISOString(),
+      };
+    }
+    if (method === "closeSubmission") return { submissionId: input.submissionId, status: input.status ?? "finished" };
+    if (method === "summary") {
+      const sessionId = typeof input.sessionId === "string" ? input.sessionId : undefined;
+      return {
+        ...(sessionId === undefined ? {} : this.companionSummaries.get(sessionId)),
+        generatedAt: new Date().toISOString(),
+        items: [],
+        notes: [],
+      };
+    }
+    return {};
+  }
+
   async *openMux(signal: AbortSignal, onOpen?: () => void): AsyncIterable<DshServerRequest<DshMuxFrame>> {
     onOpen?.();
     if (signal.aborted) return;
@@ -146,7 +185,7 @@ export class FakeConnection implements DshConnection {
       baseUrl,
       connectionEpoch: 1,
       revision: 1,
-      testedAgainstDshVersion: "0.1.0-rc.6",
+      testedAgainstDshVersion: "0.1.2-rc.1",
       compatibility: "capability-probed",
       capabilities: {
         unaryRpc: true,
