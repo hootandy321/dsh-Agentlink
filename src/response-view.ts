@@ -9,6 +9,7 @@ export const STATUS_INCLUDE_VALUES = [
   "connection",
   "recovery",
   "cost",
+  "route",
 ] as const;
 
 export type StatusInclude = (typeof STATUS_INCLUDE_VALUES)[number];
@@ -66,7 +67,10 @@ export function projectStatus(status: AnyRecord, include: StatusInclude[] = []):
     }
   }
   if (includeSet.has("queue")) view.queueDepth = status.queueDepth;
-  if (includeSet.has("workspace")) view.workspaceClaim = status.workspaceClaim ?? null;
+  if (includeSet.has("workspace")) {
+    view.workspaceClaim = status.workspaceClaim ?? null;
+    view.workspaceClaimSemantics = status.workspaceClaimSemantics;
+  }
   if (includeSet.has("sessions")) view.lineage = status.lineage ?? [];
   if (includeSet.has("connection")) view.connection = status.connection;
   if (includeSet.has("recovery")) {
@@ -75,6 +79,7 @@ export function projectStatus(status: AnyRecord, include: StatusInclude[] = []):
     view.logPath = status.logPath;
     view.derivation = status.derivation;
   }
+  if (includeSet.has("route")) view.route = status.route ?? null;
   if (includeSet.has("cost")) view.cost = status.cost ?? null;
 
   return view;

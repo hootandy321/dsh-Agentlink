@@ -7,6 +7,8 @@ import type {
 } from "../../src/connection-manager.js";
 import type { EventLedger } from "../../src/event-ledger.js";
 import type {
+  DshAgentPreset,
+  DshAgentPresetListValue,
   DshApi,
   DshClientResponse,
   DshHostDescription,
@@ -35,6 +37,9 @@ export class FakeDshApi implements DshApi {
   };
   sessions: DshSessionSummary[] = [];
   histories = new Map<string, DshSessionHistory>();
+  agentPresets: DshAgentPreset[] = [];
+  agentPresetAuthorable = false;
+  agentPresetHasDocument = false;
   models: DshSessionModels = {
     current: { provider: "test-provider", model: "test-model" },
     routable: true,
@@ -43,6 +48,14 @@ export class FakeDshApi implements DshApi {
   };
   respondReceipt: DshRpcReceipt = { accepted: true };
   nextSessionId = "root-session";
+  /**
+   * Controls the resolved agentPreset reported by `sessionCreate`:
+   * - `undefined` (the default): echo the requested preset back (matching), or omit it when none was requested;
+   * - a string: always report that string as the resolved preset (mismatch / DSH-default-with-observable tests);
+   * - `null`: force the created session to expose no resolved preset even when one was requested (legacy/absent Host).
+   */
+  sessionCreateResolvedAgentPreset?: string | null = undefined;
+  sessionModelsAgentPreset?: string | null = undefined;
   updateQueueErrors = new Map<string, Error>();
   companionErrors = new Map<string, Error>();
   companionSummaries = new Map<string, Record<string, unknown>>();
@@ -66,17 +79,32 @@ export class FakeDshApi implements DshApi {
   async sessionCreate(payload: { cwd: string; agentPreset?: string; sessionId?: string }) {
     this.calls.push({ method: "session.create", payload });
     const sessionId = payload.sessionId ?? this.nextSessionId;
+    const resolved = this.sessionCreateResolvedAgentPreset !== undefined ? this.sessionCreateResolvedAgentPreset : payload.agentPreset;
     if (!this.sessions.some((item) => item.sessionId === sessionId)) {
-      this.sessions.push({ sessionId, updatedAt: Date.now(), running: true, blank: false, cwd: payload.cwd });
+      this.sessions.push({
+        sessionId,
+        updatedAt: Date.now(),
+        running: true,
+        blank: false,
+        cwd: payload.cwd,
+        ...(resolved === undefined || resolved === null ? {} : { agentPreset: resolved }),
+      });
     }
     return this.unary("session.create", {
       sessionId,
-      ...(payload.agentPreset === undefined ? {} : { agentPreset: payload.agentPreset }),
+      ...(resolved === undefined || resolved === null ? {} : { agentPreset: resolved }),
     });
   }
 
   async sessionModels(sessionId: string) {
     this.calls.push({ method: "session.models", payload: { sessionId } });
+    if (this.sessionModelsAgentPreset !== undefined) {
+      const session = this.sessions.find((item) => item.sessionId === sessionId);
+      if (session !== undefined) {
+        if (this.sessionModelsAgentPreset === null) delete session.agentPreset;
+        else session.agentPreset = this.sessionModelsAgentPreset;
+      }
+    }
     return this.unary("session.models", this.models);
   }
 
@@ -103,6 +131,15 @@ export class FakeDshApi implements DshApi {
   async sessionCancel(sessionId: string) {
     this.calls.push({ method: "session.cancel", payload: { sessionId } });
     return this.unary("session.cancel", { accepted: true as const });
+  }
+
+  async agentPresetList(): Promise<DshUnaryResult<DshAgentPresetListValue>> {
+    this.calls.push({ method: "agentPreset.list", payload: {} });
+    return this.unary("agentPreset.list", {
+      presets: structuredClone(this.agentPresets),
+      authorable: this.agentPresetAuthorable,
+      hasDocument: this.agentPresetHasDocument,
+    });
   }
 
   async sessionUpdateQueue(sessionId: string, itemId: string, action: { kind: "remove" }) {
@@ -185,7 +222,7 @@ export class FakeConnection implements DshConnection {
       baseUrl,
       connectionEpoch: 1,
       revision: 1,
-      testedAgainstDshVersion: "0.1.2-rc.1",
+      testedDshVersions: ["0.1.0-rc.6", "0.1.0-rc.7", "0.1.2-rc.1"],
       compatibility: "capability-probed",
       capabilities: {
         unaryRpc: true,

@@ -28,7 +28,7 @@ args = ["/absolute/path/to/dsh-Agentlink/dist/index.js"]
 
 [mcp_servers.dsh_agentlink.env]
 DSH_HOST_URL = "http://127.0.0.1:3080"
-DSH_HOST_VERSION = "0.1.0-rc.6"
+DSH_HOST_VERSION = "0.1.2-rc.1"
 DSH_BRIDGE_AGENT_PRESET = "code"
 
 [mcp_servers.dsh_agentlink.tools.dsh_resolve_approval]
@@ -43,17 +43,23 @@ If an earlier installation still uses `dsh_collab`, do not keep both entries: ru
 
 ## Environment variables
 
+- `DSH_BRIDGE_PROTOCOL` — defaults to `remote` for DSH `0.1.2-rc.1`; explicitly use `legacy` for older rc.6/rc.7 Hosts.
+- `DSH_HOST_TOKEN` — launch token exchanged for the Host's signed cookie; keep it out of the Host URL and shared logs.
+- `DSH_HOST_COOKIE` — previously issued signed cookie, complete `name=value`; treat it as a credential and refresh it when expired.
+
 - `DSH_HOST_URL` — official Web Host origin; default `http://127.0.0.1:3080`
 - `DSH_HOME` — DSH home used to derive the bridge home; default `~/.dsh`
 - `DSH_BRIDGE_HOME` — override for task mappings, workspace claims, and the coordination index
 - `DSH_REQUEST_TIMEOUT_MS` — unary and WebSocket-connect timeout; default 30 seconds
-- `DSH_BRIDGE_AGENT_PRESET` — optional installed DSH agent preset; omit it to follow DSH's own default
+- `DSH_BRIDGE_AGENT_PRESET` — optional installed DSH agent preset; omit it to follow DSH's own default. This selects DSH agent composition, not a workspace claim or verified sandbox policy.
 - `DSH_BRIDGE_TIME_ZONE` — optional IANA time zone for human prompts
 - `DSH_HOST_VERSION` — optional operator-declared DSH package version; never inferred from `host.describe.version`
 - `DSH_APPROVAL_TIMEOUT_MS` — disabled by default; enables one best-effort rejection while the current bridge process and connection remain alive
 - `DSH_ALLOW_REMOTE_HOST=true` — explicitly opt in to a trusted non-loopback Host
 
-Normal delegation has no model argument. Configure the desired model in DSH; each delegation reads the Host's current model route.
+`caller.model` identifies the supervising model for API price comparison only; it does not change the DSH model. Reuse the returned `runId` across delegations for the same task, and report the current caller model on every follow-up. Unknown models remain unpriced.
+
+Normal delegation has no model routing argument. Configure the desired model in DSH; each delegation reads the Host's current model route. `workspaceMode` is a bridge-local cooperative claim only; it does not select, enforce, or verify the DSH Host filesystem sandbox.
 
 ## Host and version notes
 
@@ -64,10 +70,12 @@ dsh web --host 127.0.0.1 --port 3080
 npm run doctor
 ```
 
-DSH CLI `0.1.0-rc.6` is the current tested target. In rc.6, `host.describe.version` reports the placeholder product value `0.0.1`; it is not the CLI/package version. Doctor checks the CLI version and probes Host capabilities separately. It also reports the bridge's fail-closed lock locations under `DSH_BRIDGE_HOME` (`claims/registry.lock` and `ledgers/<task>/events.lock`) read-only and never cleans them. Lock diagnostics expose only structural presence/type and bounded `entriesObserved`/`entriesTruncated` observations; they never read `owner.json` content or report pid, token, or `createdAt`.
+The default Remote transport targets DSH CLI `0.1.2-rc.1`. Earlier `0.1.0-rc.6` and `0.1.0-rc.7` remain explicit legacy targets. In those legacy versions, `host.describe.version` reports the placeholder product value `0.0.1`; it is not the CLI/package version. Doctor checks the CLI version and probes Host capabilities separately. It also reports the bridge's fail-closed lock locations under `DSH_BRIDGE_HOME` (`claims/registry.lock` and `ledgers/<task>/events.lock`) read-only and never cleans them. Lock diagnostics expose only structural presence/type and bounded `entriesObserved`/`entriesTruncated` observations; they never read `owner.json` content or report pid, token, or `createdAt`.
 
 The ingestion fix does not compact an existing 5 MB+ ledger. Preserve the old bridge home for inspection. If necessary, configure a separate `DSH_BRIDGE_HOME` for new delegations, understanding that bridge task ids, cursors, and claims begin fresh there. DSH `session.history` remains the authoritative conversation record. There is intentionally no automatic ledger or lock cleanup command.
 
-The rc.6 Web API has no auth token. Loopback-only is the safe default. A remote URL must be an explicitly trusted deployment and requires `DSH_ALLOW_REMOTE_HOST=true`.
+DSH `0.1.2-rc.1` uses a launch token and signed cookie. Configure credentials locally after setup; the wizard does not retrieve or persist them for you. The older rc.6/rc.7 Web API has no auth token. Loopback-only is the safe default. A remote URL must be an explicitly trusted deployment and requires `DSH_ALLOW_REMOTE_HOST=true`.
 
 dsh-Agentlink is not a DSH Cordis bundle. Do not install it with `dsh plugin --profile ... add ...`.
+
+The separate [DSH companion package](../dsh-plugin/README.md) is a Cordis bundle; install it to enable source navigation and cost estimates.

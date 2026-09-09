@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
 import { z } from "zod";
 import { DshRpcError, DshTransportError } from "./dsh-client.js";
-import { attachDshUnaryMetadata, dshSessionEventSchema, dshSessionListValueSchema,
+import { attachDshUnaryMetadata, dshAgentPresetListValueSchema, dshSessionEventSchema, dshSessionListValueSchema,
   dshSessionCreateValueSchema, dshSessionPromptValueSchema, dshSessionRenameValueSchema,
   dshSessionCancelValueSchema, dshSessionUpdateQueueValueSchema, dshMuxFrameSchema, dshSubagentListValueSchema,
   type DshApi, type DshClientResponse, type DshMuxFrame, type DshServerRequest,
@@ -94,6 +94,9 @@ export class RemoteDshClient implements DshApi {
     const models = await this.remote("session/modelCatalog", {}, catalogSchema, signal);
     return attachDshUnaryMetadata({ version: "unknown", cwd: "", provider: models.default.provider, model: models.default.model,
       attachedSessions: 0, canOpenPath: false, protocol: "remote", versionSource: "adapter-target" }, { issuedRpcId: randomUUID(), method: "session/modelCatalog" });
+  }
+  agentPresetList(signal?: AbortSignal) {
+    return this.remote("agentPresets/list", {}, dshAgentPresetListValueSchema, signal);
   }
   sessionList(signal?: AbortSignal) { return this.remote("session/list", { _request: {} }, dshSessionListValueSchema, signal); }
   sessionCreate(payload: { cwd: string; agentPreset?: string; sessionId?: string }, signal?: AbortSignal) {

@@ -6,9 +6,9 @@
 
 ## 定位与 Host 生命周期
 
-dsh-Agentlink 是调用方一侧的 bridge，不是 DSH Cordis bundle。Codex 把它作为本地 STDIO MCP server 启动，bridge 再连接独立运行的官方 DSH Web Host。
+dsh-Agentlink 是调用方一侧的 bridge，不是 DSH Cordis bundle。Codex 或 Claude Code 等已支持的调用方会把它作为本地 STDIO MCP server 启动，bridge 再连接独立运行的官方 DSH Web Host。
 
-bridge 采用 connect-only 模式：它不会启动、守护、停止或拥有 `dsh web`，也不负责 Host pidfile 或端口锁。Host 生命周期由用户或操作系统服务管理，因此单个 Codex MCP 进程退出后，DSH session 仍可留在官方 Web UI 中查看。
+bridge 采用 connect-only 模式：它不会启动、守护、停止或拥有 `dsh web`，也不负责 Host pidfile 或端口锁。Host 生命周期由用户或操作系统服务管理，因此单个调用方 MCP 进程退出后，DSH session 仍可留在官方 Web UI 中查看。
 
 ## 身份与状态模型
 
@@ -101,11 +101,11 @@ event pump 即使无人调用 tail 也会运行。bridge 重启后从 JSONL 重�
 
 ## 工作区协作
 
-`dsh_delegate` 通过 `realpath` 解析目标 cwd，然后取得持久化 workspace claim。默认是 `exclusive-write`；`read-only` 允许只读任务互相重叠，但任何祖先或后代路径上的 exclusive claim 都会冲突。使用同一 bridge home 的 bridge 进程共享 claim。claim 在 `turn/end` 后仍保留，因为用户可能稍后从 DSH Web 继续该 session。
+`dsh_delegate` 通过 `realpath` 解析目标 cwd，然后取得持久化 workspace claim。默认是 `exclusive-write`；`read-only` 只允许 bridge-local 的只读 claim 互相重叠，但任何祖先或后代路径上的 exclusive claim 都会冲突。使用同一 bridge home 的 bridge 进程共享 claim。claim 在 `turn/end` 后仍保留，因为用户可能稍后从 DSH Web 继续该 session。这只是 cooperative coordination：`workspaceMode` 不会选择、执行或验证 DSH Host 的 filesystem sandbox，`agentPreset` 表示 DSH agent composition，而不是 workspace 或权限策略。工具响应会暴露 `workspaceClaimSemantics.controlsDshSandbox=false`，调用方不需要解析文案也能展示这个边界。
 
 只有 `dsh_release_workspace` 会释放 claim。释放 claim 不会关闭或取消 DSH session。follow-up、question answer 和 `allow_once` 要求 task claim 仍有效；安全取消与 approval reject 即使没有 claim 仍可用。
 
-workspace claim 是 cooperative coordination。它能阻止同一 bridge store 观察到的冲突 delegation，但不能阻止 DSH Web、另一个 bridge home、Codex、shell 或编辑器直接写文件。task 持有 `exclusive-write` 时，负责监督的 Codex 不得编辑该 cwd。对可写 delegation，独立 git worktree 是推荐的强隔离边界。
+workspace claim 是 cooperative coordination。它能阻止同一 bridge store 观察到的冲突 delegation，但不能阻止 DSH Web、另一个 bridge home、调用方、shell 或编辑器直接写文件。task 持有 `exclusive-write` 时，负责监督的调用方不得编辑该 cwd。对可写 delegation，独立 git worktree 是推荐的强隔离边界。
 
 如果 DSH session 创建后才发生 claim acquisition race，bridge 会返回指出无 prompt session/task mapping 的 conflict，不会在没有 claim 的情况下静默运行。
 
@@ -120,8 +120,8 @@ workspace claim 是 cooperative coordination。它能阻止同一 bridge store �
 - mux connect 或 reconnect 后，只有 rc.6 发出真实 `session/queue` snapshot，queue state 才能确定；bridge 不会根据 `session/subscribed` 推断空 queue。
 - 普通用户创建的 session fork 不会折叠进 BridgeTask；session-backed subagent descendant 会。
 - Host-origin affinity 受配置约束，不存储在严格 task mapping 中。更改 `DSH_HOST_URL` 后不要复用旧 `DSH_BRIDGE_HOME`；不支持 per-task cross-Host migration。
-- workspace claim 不能提供 OS 级排他，fresh write preflight 也不能消除 Web client 的 TOCTOU race。项目不承诺完整的“多 Codex 加交互式 Web 同时操作无冲突”。
-- 不支持 exactly-once delivery、atomic queue clear、`events.mux.since` resume、argument-dependent Codex approval policy、自动取消 background job，或通过 `host.describe.version` 检测 Host package 版本。
+- workspace claim 不能提供 OS 级排他，fresh write preflight 也不能消除 Web client 的 TOCTOU race。项目不承诺完整的“多调用方加交互式 Web 同时操作无冲突”。
+- 不支持 exactly-once delivery、atomic queue clear、`events.mux.since` resume、argument-dependent caller approval policy、自动取消 background job，或通过 `host.describe.version` 检测 Host package 版本。
 - 真实浏览器可见的端到端交互属于 operator acceptance，不是 `npm test` 的组成部分。修改 DSH 版本、model route、agent preset、event reconciliation 或 mutation semantics 后，请执行[验证指南](validation.md)。
 
 当前源码预览中的缺陷与临时处理方式见[已知问题](../KNOWN_ISSUES.md)。

@@ -31,6 +31,7 @@ async function host(options: HostOptions = {}) {
     const endpoint = req.url!.slice(5);
     const args = body.payload.args;
     const value = endpoint === "session/list" ? { items: options.sessionList ?? [] }
+      : endpoint === "agentPresets/list" ? { presets: [{ id: "code", trust: "system", isDefault: true }], authorable: true }
       : endpoint === "session/page" ? { records: [], hasMore: false }
       : endpoint === "subagents/list" ? { entries: options.subagentsByParent?.[args.parentSessionId] ?? [], parentAvailable: true }
       : endpoint === "$events/result" ? undefined
@@ -301,4 +302,17 @@ test("signed cookie authentication survives launch-token changes without exposin
   assert.deepEqual((await client.sessionList()).items, []);
   assert.equal(requests,1);
   assert.throws(() => new RemoteDshClient("http://127.0.0.1:3080",1000,undefined,undefined,"dsh=bad\r\nheader=oops"),/invalid DSH_HOST_COOKIE format/);
+});
+
+
+test("released Remote preset roster preserves verification without the legacy hasDocument field", async () => {
+  const h = await host();
+  try {
+    const client = new RemoteDshClient(h.url, 1000, "test");
+    const roster = await client.agentPresetList();
+    assert.equal(roster.presets[0]?.id, "code");
+    assert.equal(roster.hasDocument, undefined);
+    assert.deepEqual(h.requests[0].payload.args, {});
+    assert.equal(h.requests[0].method, "agentPresets/list");
+  } finally { await h.close(); }
 });

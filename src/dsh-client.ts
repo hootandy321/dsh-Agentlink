@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import {
   attachDshUnaryMetadata,
+  dshAgentPresetListValueSchema,
   dshHostDescriptionSchema,
   dshMuxFrameSchema,
   dshRpcErrorBodySchema,
@@ -20,6 +21,7 @@ import {
   dshSubagentListValueSchema,
 } from "./dsh-types.js";
 import type {
+  DshAgentPresetListValue,
   DshApi,
   DshClientResponse,
   DshHostDescription,
@@ -231,6 +233,10 @@ export class DshClient implements DshApi {
 
   sessionCancel(sessionId: string, signal?: AbortSignal) {
     return this.call("session.cancel", { sessionId }, dshSessionCancelValueSchema, signal);
+  }
+
+  agentPresetList(signal?: AbortSignal): Promise<DshUnaryResult<DshAgentPresetListValue>> {
+    return this.call("agentPreset.list", {}, dshAgentPresetListValueSchema, signal);
   }
 
   sessionUpdateQueue(sessionId: string, itemId: string, action: { kind: "remove" }, signal?: AbortSignal) {

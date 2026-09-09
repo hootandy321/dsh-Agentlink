@@ -397,6 +397,11 @@ function stableKey(input: LedgerAppendInput, recordType: string, sourceSessionId
   const sourceSeq = input.sourceSeq ?? rawSourceSeq(input.raw);
   if (recordType === "session/event" && sourceSeq !== undefined) return `session-event:${sourceSessionId}:${sourceSeq}`;
 
+  if (recordType === "session/queue") {
+    const rpcId = rawRpcId(input.raw);
+    if (rpcId !== undefined) return `snapshot-rpc:${recordType}:${sourceSessionId}:${rpcId}`;
+  }
+
   const payload = payloadOf(input.raw);
   if (recordType === "question/resolved") {
     const questionRpcId = stringField(payload, "questionRpcId");

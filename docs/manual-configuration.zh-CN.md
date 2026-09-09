@@ -43,6 +43,8 @@ approval_mode = "prompt"
 
 ## 环境变量
 
+安装器不会自动获取或保存 Host 凭据；安装后请在本机配置 `DSH_HOST_TOKEN` 或 `DSH_HOST_COOKIE`，并保密存放。
+
 - `DSH_HOST_COOKIE` — 已通过 Host 启动链接换取的签名 cookie（完整 `name=value`），可跨 Host 重启使用；作为凭据保密存放，到期后重新换取。
 - `DSH_HOST_TOKEN` — 正式版 Host 启动链接中的 token，通过环境传递；不要把 token 写进 Host URL。
 - `DSH_BRIDGE_PROTOCOL` — 默认 `remote`（0.1.2-rc.1）；旧 Host 可显式选择 `legacy`。
@@ -50,13 +52,14 @@ approval_mode = "prompt"
 - `DSH_HOME` — 用于推导 bridge home 的 DSH home；默认 `~/.dsh`
 - `DSH_BRIDGE_HOME` — task mapping、workspace claim 与 coordination index 的目录覆盖值
 - `DSH_REQUEST_TIMEOUT_MS` — unary 请求与 WebSocket 连接超时；默认 30 秒
-- `DSH_BRIDGE_AGENT_PRESET` — 可选的已安装 DSH agent preset；省略时跟随 DSH 默认值
+- `DSH_BRIDGE_AGENT_PRESET` — 可选的已安装 DSH agent preset；省略时跟随 DSH 默认值。它选择的是 DSH agent composition，不是 workspace claim 或已验证的 sandbox 策略。
 - `DSH_BRIDGE_TIME_ZONE` — 用于人机提示的可选 IANA 时区
 - `DSH_HOST_VERSION` — 操作方可选声明的 DSH package 版本；不会从 `host.describe.version` 推断
 - `DSH_APPROVAL_TIMEOUT_MS` — 默认关闭；启用后，仅在当前 bridge 进程和连接仍存活时尝试一次 best-effort reject
 - `DSH_ALLOW_REMOTE_HOST=true` — 显式允许受信任的非 loopback Host
 
 DSH 执行模型由 Host 配置决定。新增的 `caller.model` 仅用于主模型 API 价格对照，不改变 DSH 路由；同一个完整任务的多个委派复用返回的 `runId`。主模型未知时不猜测价格。
+`workspaceMode` 只是 bridge-local cooperative claim，不会选择、执行或验证 DSH Host filesystem sandbox。
 
 ## Host 与版本说明
 

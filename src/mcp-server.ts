@@ -42,6 +42,10 @@ const ERROR_DETAIL_KEYS = new Set([
   "currentRevision",
   "code",
   "stage",
+  "requestedPreset",
+  "resolvedPreset",
+  "presetId",
+  "promptSent",
 ]);
 
 function safeDetailValue(value: unknown): unknown {
@@ -153,7 +157,7 @@ const callerSchema: z.ZodType<CallerInput> = z
   .strict();
 
 export function createMcpServer(service: BridgeService): McpServer {
-  const server = new McpServer({ name: "dsh-agentlink", version: "0.1.0-alpha.1" });
+  const server = new McpServer({ name: "dsh-agentlink", version: "0.2.0" });
 
   server.registerTool(
     "dsh_host_status",
@@ -169,18 +173,25 @@ export function createMcpServer(service: BridgeService): McpServer {
     "dsh_delegate",
     {
       description:
-        "Create a root session on the configured official DSH Web Host, register Agentlink attribution, and queue the initial prompt. Uses DSH's configured model; caller.model is only a comparison label, never a DSH route override. Omitted caller.model.serviceTier defaults to standard API pricing. Detached by default.",
+        "Create a root session on the configured official DSH Web Host, register Agentlink attribution, and queue the initial prompt. Uses DSH's configured model; caller.model is only a comparison label, never a DSH route override. Omitted caller.model.serviceTier defaults to standard API pricing. Detached by default. workspaceMode is only a bridge-local cooperative claim and does not select or verify the DSH sandbox.",
       inputSchema: z
         .object({
           prompt: z.string().min(1),
           cwd: z.string().min(1).describe("Existing absolute directory visible to the DSH Host."),
           runId: z.string().min(1).optional(),
           caller: callerSchema.optional(),
-          agentPreset: z.string().min(1).optional(),
+          agentPreset: z
+            .string()
+            .min(1)
+            .optional()
+            .describe("DSH agent composition/preset name. This does not express workspace ownership or verified sandbox policy."),
           title: z.string().min(1).optional(),
           waitSeconds: z.number().int().min(0).max(30).default(0),
           include: z.array(z.enum(STATUS_INCLUDE_VALUES)).default([]),
-          workspaceMode: z.enum(["read-only", "exclusive-write"]).default("exclusive-write"),
+          workspaceMode: z
+            .enum(["read-only", "exclusive-write"])
+            .default("exclusive-write")
+            .describe("Bridge-local cooperative workspace claim only; it is not a DSH Host filesystem sandbox selector or verifier."),
         })
         .strict(),
       annotations: writeOnce,
@@ -231,7 +242,7 @@ export function createMcpServer(service: BridgeService): McpServer {
     "dsh_status",
     {
       description:
-        "Return a compact supervision summary by default. Use include to fetch selected result, interaction, queue, workspace, session, connection, or recovery details.",
+        "Return a compact supervision summary by default. Use include to fetch selected result, interaction, queue, workspace, session, connection, route, or recovery details.",
       inputSchema: z.object({ taskId: taskIdSchema, include: z.array(z.enum(STATUS_INCLUDE_VALUES)).default([]) }).strict(),
       annotations: readOnly,
     },
@@ -359,7 +370,7 @@ export function createMcpServer(service: BridgeService): McpServer {
     "dsh_release_workspace",
     {
       description:
-        "Explicitly release this bridge task's persistent workspace claim. This does not close the DSH session or stop Web/Codex from editing the directory.",
+        "Explicitly release this bridge task's persistent workspace claim. This does not close the DSH session or stop other clients from editing the directory.",
       inputSchema: z.object({ taskId: taskIdSchema }).strict(),
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     },
@@ -400,7 +411,7 @@ export function createMcpServer(service: BridgeService): McpServer {
     "dsh_resolve_approval",
     {
       description:
-        "Resolve one pending DSH sandbox-escalation approval as allow_once or reject. Never auto-allows; configure this Codex MCP tool with approval_mode=prompt before permitting allow_once.",
+        "Resolve one pending DSH sandbox-escalation approval as allow_once or reject. Never auto-allows; keep this tool behind the caller's human approval prompt before permitting allow_once.",
       inputSchema: z
         .object({
           taskId: taskIdSchema,
@@ -411,6 +422,7 @@ export function createMcpServer(service: BridgeService): McpServer {
         })
         .strict(),
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+      _meta: { "anthropic/requiresUserInteraction": true },
     },
     async ({ taskId, requestId, outcome, sinceCursor, expectedRevision }) =>
       handled(() => service.resolveApproval(taskId, requestId, outcome, writePreconditions(sinceCursor, expectedRevision))),

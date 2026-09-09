@@ -15,7 +15,7 @@ import type {
 import { getDshUnaryMetadata } from "./dsh-types.js";
 import type { DshApi, DshHistoryEntry, DshQuestionAnswer } from "./dsh-types.js";
 import type { TailKind } from "./response-view.js";
-import type { TaskRecord } from "./task-store.js";
+import type { TaskRecord, TaskRouteRecord } from "./task-store.js";
 import { TaskStore } from "./task-store.js";
 import type { WorkspaceClaimMode } from "./workspace-claim.js";
 import { WorkspaceClaimConflictError, WorkspaceClaimStore } from "./workspace-claim.js";
@@ -53,9 +53,15 @@ export type WaitWakeOn = "attention" | "activity";
 
 export type TaskAvailability = "connected" | "host_unreachable" | "session_not_found";
 
+export interface WorkspaceClaimSemantics {
+  enforcement: "bridge-cooperative-only";
+  controlsDshSandbox: false;
+  description: string;
+}
+
 export class DelegationSetupError extends Error {
   constructor(
-    readonly stage: "mapping" | "workspace-claim" | "models" | "prompt",
+    readonly stage: "mapping" | "preset-verification" | "workspace-claim" | "models" | "prompt",
     message: string,
     readonly sessionId: string,
     readonly taskId?: string,
@@ -74,6 +80,9 @@ export class BridgeCapabilityError extends Error {
       | "host_unreachable"
       | "model_unroutable"
       | "workspace_claim_missing"
+      | "preset_not_found"
+      | "preset_broken"
+      | "resolved_preset_mismatch"
       | "unsupported",
     message: string,
     readonly details: Record<string, unknown> = {},
@@ -307,6 +316,15 @@ function queueDepth(snapshot: QueueSnapshot) {
   };
 }
 
+function workspaceClaimSemantics(): WorkspaceClaimSemantics {
+  return {
+    enforcement: "bridge-cooperative-only",
+    controlsDshSandbox: false,
+    description:
+      "workspaceMode is a bridge-local coordination claim shared only by bridge processes using the same bridge home; it does not select, enforce, or verify the DSH Host filesystem sandbox.",
+  };
+}
+
 function statusShape(
   task: TaskRecord,
   connection: HostConnectionSnapshot,
@@ -319,6 +337,14 @@ function statusShape(
   workspaceClaim: Awaited<ReturnType<WorkspaceClaimStore["get"]>>,
   attribution?: InvocationRecord | undefined,
 ) {
+  const coordinationFailure =
+    task.route?.launchStage === "launch-failed"
+      ? {
+          code: task.route.failureCode ?? "launch_failed",
+          promptSent: task.route.promptSent,
+          recordedAt: task.route.recordedAt,
+        }
+      : null;
   return {
     taskId: task.taskId,
     rootSessionId: task.sessionId,
@@ -327,6 +353,8 @@ function statusShape(
     execution,
     status: availability === "connected" ? execution : "unknown",
     lastKnownExecutionStatus: availability === "connected" ? execution : ledger.lastKnownExecutionStatus,
+    route: task.route ?? null,
+    coordinationFailure,
     turn: ledger.currentTurn ?? null,
     pendingInteractions: pending,
     queueDepth: queueDepth(queue),
@@ -352,6 +380,7 @@ function statusShape(
     lineage,
     connection,
     workspaceClaim: workspaceClaim ?? null,
+    workspaceClaimSemantics: workspaceClaimSemantics(),
     derivation: "session.list + session.history/event-ledger + events.mux pending/queue snapshots",
   };
 }
@@ -778,12 +807,57 @@ export class BridgeService {
     this.validateWaitSeconds(waitSeconds);
 
     await this.api.hostDescribe();
-    const agentPreset = input.agentPreset?.trim() || this.config.defaultAgentPreset;
-    const created = await this.api.sessionCreate({ cwd, ...(agentPreset === undefined ? {} : { agentPreset }) });
+    const requestedPreset = input.agentPreset?.trim();
+    const selectedPreset = requestedPreset || this.config.defaultAgentPreset;
+    const selectionMode: "manual" | "dsh-default" = selectedPreset === undefined ? "dsh-default" : "manual";
+    const reasonCode =
+      requestedPreset !== undefined
+        ? "explicit_preset"
+        : this.config.defaultAgentPreset !== undefined
+          ? "configured_default_preset"
+          : "dsh_default";
+    let verification: "not-required" | "verified" | "unavailable" =
+      selectionMode === "dsh-default" ? "not-required" : "unavailable";
+    let resolvedPreset: string | undefined;
 
+    if (selectionMode === "manual" && selectedPreset !== undefined) {
+      const roster = await this.api.agentPresetList();
+      const entry = roster.presets.find((preset) => preset.id === selectedPreset);
+      if (entry === undefined) {
+        throw new BridgeCapabilityError(
+          "preset_not_found",
+          `requested agent preset "${selectedPreset}" is not in the DSH preset roster`,
+          { requestedPreset: selectedPreset, promptSent: false },
+        );
+      }
+      if (entry.broken !== undefined) {
+        throw new BridgeCapabilityError(
+          "preset_broken",
+          `requested agent preset "${selectedPreset}" is marked broken and cannot be launched`,
+          { requestedPreset: selectedPreset, presetId: entry.id, promptSent: false },
+        );
+      }
+    }
+
+    const created = await this.api.sessionCreate({
+      cwd,
+      ...(selectedPreset === undefined ? {} : { agentPreset: selectedPreset }),
+    });
+
+    resolvedPreset = created.agentPreset;
+    const initialRoute: TaskRouteRecord = {
+      selectionMode,
+      ...(selectedPreset === undefined ? {} : { requestedPreset: selectedPreset }),
+      ...(resolvedPreset === undefined ? {} : { resolvedPreset }),
+      verification,
+      launchStage: "session-created",
+      promptSent: false,
+      reasonCode,
+      recordedAt: new Date().toISOString(),
+    };
     let task: TaskRecord;
     try {
-      task = await this.tasks.create(created.sessionId);
+      task = await this.tasks.create(created.sessionId, initialRoute);
     } catch (error) {
       throw new DelegationSetupError(
         "mapping",
@@ -794,6 +868,64 @@ export class BridgeService {
       );
     }
     await this.connection.trackTask(task);
+
+    const persistRoute = async (route: TaskRouteRecord, message: string): Promise<void> => {
+      try {
+        task = await this.tasks.updateRoute(task.taskId, route);
+      } catch (error) {
+        throw new DelegationSetupError("mapping", message, created.sessionId, task.taskId, { cause: error });
+      }
+    };
+    const currentRoute = (
+      launchStage: TaskRouteRecord["launchStage"],
+      options: { failureCode?: string; promptSent?: boolean } = {},
+    ): TaskRouteRecord => ({
+      selectionMode,
+      ...(selectedPreset === undefined ? {} : { requestedPreset: selectedPreset }),
+      ...(resolvedPreset === undefined ? {} : { resolvedPreset }),
+      verification: options.failureCode === undefined ? verification : "failed",
+      launchStage,
+      promptSent: options.promptSent ?? false,
+      ...(options.failureCode === undefined ? {} : { failureCode: options.failureCode }),
+      reasonCode,
+      recordedAt: new Date().toISOString(),
+    });
+    const failLaunch = (failureCode: string) =>
+      persistRoute(
+        currentRoute("launch-failed", { failureCode }),
+        `DSH root session ${created.sessionId} exists as task ${task.taskId}, but its launch failure could not be recorded`,
+      );
+
+    if (selectionMode === "manual") {
+      if (created.agentPreset === undefined) {
+        verification = "unavailable";
+      } else if (created.agentPreset === selectedPreset) {
+        verification = "verified";
+        resolvedPreset = created.agentPreset;
+      } else {
+        await failLaunch("resolved_preset_mismatch");
+        throw new BridgeCapabilityError(
+          "resolved_preset_mismatch",
+          `requested agent preset "${selectedPreset}" resolved to "${created.agentPreset}" on the DSH session`,
+          {
+            taskId: task.taskId,
+            rootSessionId: task.sessionId,
+            sessionId: created.sessionId,
+            requestedPreset: selectedPreset,
+            resolvedPreset: created.agentPreset,
+            promptSent: false,
+          },
+        );
+      }
+    } else {
+      verification = "not-required";
+      resolvedPreset = created.agentPreset;
+    }
+    await persistRoute(
+      currentRoute("preset-verified"),
+      `DSH root session ${created.sessionId} exists as task ${task.taskId}, but its preset verification could not be recorded`,
+    );
+
     const workspaceMode = input.workspaceMode ?? "exclusive-write";
     let workspaceClaim;
     try {
@@ -804,6 +936,7 @@ export class BridgeService {
         mode: workspaceMode,
       });
     } catch (error) {
+      await failLaunch(error instanceof WorkspaceClaimConflictError ? error.code : "workspace_claim_failed");
       if (error instanceof WorkspaceClaimConflictError) {
         throw new WorkspaceClaimConflictError(
           error.code,
@@ -826,6 +959,7 @@ export class BridgeService {
     try {
       models = await this.api.sessionModels(created.sessionId);
     } catch (error) {
+      await failLaunch("model_route_unavailable");
       throw new DelegationSetupError(
         "models",
         `DSH root session ${created.sessionId} exists as task ${task.taskId}, but its model route could not be verified`,
@@ -835,6 +969,7 @@ export class BridgeService {
       );
     }
     if (!models.routable) {
+      await failLaunch("model_unroutable");
       throw new DelegationSetupError(
         "models",
         `DSH root session ${created.sessionId} selected ${formatModel(models.current)}, but its provider is not routable (task ${task.taskId})`,
@@ -843,6 +978,59 @@ export class BridgeService {
       );
     }
 
+    let liveSession;
+    try {
+      const listed = await this.api.sessionList();
+      liveSession = listed.items.find((item) => item.sessionId === created.sessionId);
+    } catch (error) {
+      await failLaunch("preset_recheck_unavailable");
+      throw new DelegationSetupError(
+        "preset-verification",
+        `DSH root session ${created.sessionId} exists as task ${task.taskId}, but its preset could not be re-read before prompt`,
+        created.sessionId,
+        task.taskId,
+        { cause: error },
+      );
+    }
+    if (liveSession === undefined) {
+      await failLaunch("session_not_found");
+      throw new BridgeCapabilityError(
+        "session_not_found",
+        `DSH root session ${created.sessionId} disappeared before its initial prompt`,
+        { taskId: task.taskId, rootSessionId: task.sessionId, sessionId: created.sessionId, promptSent: false },
+      );
+    }
+    if (selectionMode === "manual") {
+      if (liveSession.agentPreset === undefined) {
+        verification = "unavailable";
+      } else if (liveSession.agentPreset === selectedPreset) {
+        verification = "verified";
+        resolvedPreset = liveSession.agentPreset;
+      } else {
+        resolvedPreset = liveSession.agentPreset;
+        await failLaunch("resolved_preset_mismatch");
+        throw new BridgeCapabilityError(
+          "resolved_preset_mismatch",
+          `requested agent preset "${selectedPreset}" changed to "${liveSession.agentPreset}" before the DSH prompt`,
+          {
+            taskId: task.taskId,
+            rootSessionId: task.sessionId,
+            sessionId: created.sessionId,
+            requestedPreset: selectedPreset,
+            resolvedPreset: liveSession.agentPreset,
+            promptSent: false,
+          },
+        );
+      }
+    } else if (liveSession.agentPreset !== undefined) {
+      resolvedPreset = liveSession.agentPreset;
+    }
+    await persistRoute(
+      currentRoute("preset-verified"),
+      `DSH root session ${created.sessionId} exists as task ${task.taskId}, but its final preset verification could not be recorded`,
+    );
+
+    const coordinationWarnings: string[] = [];
     const attribution = await this.registerInvocationMetadata({
       taskId: task.taskId,
       rootSessionId: created.sessionId,
@@ -851,12 +1039,19 @@ export class BridgeService {
       ...(input.caller === undefined ? {} : { caller: input.caller }),
       ...(input.title === undefined ? {} : { title: input.title }),
     });
-    let promptTrackingWarning: string | undefined;
     let promptIssuedRpcId: string | undefined;
     try {
       const promptReceipt = await this.api.sessionPrompt(promptPayload(this.config, created.sessionId, prompt, "queue"));
       const issuedRpcId = getDshUnaryMetadata(promptReceipt).issuedRpcId;
       promptIssuedRpcId = issuedRpcId;
+      await this.tasks
+        .updateRoute(task.taskId, currentRoute("prompt-sent", { promptSent: true }))
+        .then((updated) => {
+          task = updated;
+        })
+        .catch((error: unknown) => {
+          coordinationWarnings.push(`prompt was accepted, but its route record could not be finalized: ${String(error)}`);
+        });
       await this.ledger
         .append(task.taskId, {
           sourceSessionId: created.sessionId,
@@ -865,10 +1060,13 @@ export class BridgeService {
           raw: { issuedRpcId, mode: "queue" },
         })
         .catch((error: unknown) => {
-          promptTrackingWarning = `prompt was accepted as rpcId ${issuedRpcId}, but coordination metadata could not be recorded: ${String(error)}`;
+          coordinationWarnings.push(
+            `prompt was accepted as rpcId ${issuedRpcId}, but coordination metadata could not be recorded: ${String(error)}`,
+          );
         });
     } catch (error) {
       await this.closeSubmissionMetadata(attribution.submissionId, "failed");
+      if (promptIssuedRpcId === undefined) await failLaunch("prompt_not_accepted");
       throw new DelegationSetupError(
         "prompt",
         `DSH root session ${created.sessionId} exists as task ${task.taskId}, but the initial prompt was not accepted`,
@@ -894,12 +1092,15 @@ export class BridgeService {
       detached: waitSeconds === 0,
       model: models.current,
       routable: models.routable,
+      selectionMode,
+      verification,
+      ...(selectedPreset === undefined ? {} : { requestedPreset: selectedPreset }),
+      ...(resolvedPreset === undefined ? {} : { resolvedPreset }),
       ...(promptIssuedRpcId === undefined ? {} : { issuedRpcId: promptIssuedRpcId }),
       baseUrl: this.config.hostUrl,
       workspaceClaim,
-      ...(warningJoin(attribution.warning, promptTrackingWarning) === undefined
-        ? {}
-        : { coordinationWarning: warningJoin(attribution.warning, promptTrackingWarning) }),
+      workspaceClaimSemantics: workspaceClaimSemantics(),
+      ...(warningJoin(attribution.warning, ...coordinationWarnings) === undefined ? {} : { coordinationWarning: warningJoin(attribution.warning, ...coordinationWarnings) }),
       ...(renameWarning === undefined ? {} : { warning: renameWarning }),
     };
     if (waitSeconds === 0) return base;
@@ -1357,6 +1558,7 @@ export class BridgeService {
             rootSessionId: task.sessionId,
             availability: "host_unreachable",
             status: "unknown",
+            workspaceClaimSemantics: workspaceClaimSemantics(),
             error: error instanceof Error ? { name: error.name, message: error.message } : { message: String(error) },
           };
         }

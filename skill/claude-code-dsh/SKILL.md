@@ -1,25 +1,27 @@
 ---
-name: codex-dsh
-description: Delegate bounded work from Codex to the user's existing official DSH Web Host while preserving typed supervision, task cursors, follow-up, and safe cancellation.
+name: claude-code-dsh
+description: Delegate bounded work from Claude Code to the user's existing official DSH Web Host while preserving typed supervision, task cursors, follow-up, and safe cancellation.
 ---
 
-# Codex to DSH collaboration
+# Claude Code to DSH collaboration
 
-This skill operates the standalone Codex-side MCP bridge. The repository may be discovered under the broad `dsh-plugin` ecosystem topic, but it is not a DSH Cordis bundle and must not be installed with `dsh plugin --profile ... add ...`.
+This skill operates the standalone MCP bridge from Claude Code to the user's official DSH Web Host. The repository may be discovered under the broad `dsh-plugin` ecosystem topic, but it is not a DSH Cordis bundle and must not be installed with `dsh plugin --profile ... add ...`.
 
-Use the `dsh_*` MCP tools only with the user's already managed official DSH Web Host. The bridge is connect-only: never start, daemonize, stop, or reconfigure `dsh web`, and never modify DSH model settings during normal delegation.
+Use the `dsh_*` MCP tools only after the project MCP server has been trusted interactively with Claude Code's `/mcp` flow. The bridge is connect-only: never start, daemonize, stop, or reconfigure `dsh web`, and never modify DSH model settings during normal delegation.
+
+Headless or `dontAsk` operation cannot complete human approval safely. If Claude Code cannot show the approval prompt, reject the approval or return to the user instead of continuing.
 
 ## Workflow
 
 1. Call `dsh_host_status` when Host availability is unknown. If unreachable, report the doctor/start command; do not start the Host yourself.
-2. Call `dsh_delegate` with a complete prompt and an existing absolute `cwd`. Omit model and normally omit `agentPreset`; the bridge's installation-time default owns that choice. `agentPreset` chooses DSH agent composition, not workspace ownership or verified sandbox policy. The shipped `code` preset keeps the standard capability set through DSH Code Mode and is the preferred default for implementation or multi-step tool work. Use the default `exclusive-write` workspace claim for edits, preferably on a dedicated git worktree; use `read-only` only as a bridge-local cooperative claim for tasks that should not mutate files. It does not make DSH run in a read-only filesystem sandbox. Pass `caller` only when you know the supervising client/model exactly, for example `{ client: "codex", model: { provider: "<provider>", id: "<actual-main-model>", serviceTier: "standard", source: "caller-reported" } }`; if `serviceTier` is omitted for the caller comparison model, the bridge records `standard` API pricing. Always report the actual caller client, even when the main model is unknown; omitted caller defaults to codex with an unknown model. Keep the returned BridgeTask id, root session id, runId, and submission id.
+2. Call `dsh_delegate` with a complete prompt and an existing absolute `cwd`. Omit model and normally omit `agentPreset`; the bridge's installation-time default owns that choice. `agentPreset` chooses DSH agent composition, not workspace ownership or verified sandbox policy. The shipped `code` preset keeps the standard capability set through DSH Code Mode and is the preferred default for implementation or multi-step tool work. Use the default `exclusive-write` workspace claim for edits, preferably on a dedicated git worktree; use `read-only` only as a bridge-local cooperative claim for tasks that should not mutate files. It does not make DSH run in a read-only filesystem sandbox. Pass `caller` only when you know the supervising client/model exactly, for example `{ client: "claude-code", model: { provider: "<provider>", id: "<actual-main-model>", serviceTier: "standard", source: "caller-reported" } }`; if `serviceTier` is omitted for the caller comparison model, the bridge records `standard` API pricing. Always report the actual caller client, even when the main model is unknown; omitted caller defaults to codex with an unknown model. Keep the returned BridgeTask id, root session id, runId, and submission id.
 
 3. Treat BridgeTask, root session, and turn as distinct. A completed turn can be followed by another turn in the same root session.
 4. Use `dsh_wait` for at most 30 seconds. Its default `wakeOn="attention"` wakes for terminal results, pending questions/approvals, or availability/recovery problems; ordinary activity only advances the returned cursor and does not require immediate inspection. Use `wakeOn="activity"` only when progress events are intentionally needed. Use `dsh_tail` with `nextCursor` and explicit `kinds`/`sessionIds` when you need event details. Do not poll raw per-session seq values or assume mux `since` resumes history.
 5. Before a write, retain the latest task `cursor` and connection `revision`, then pass them as `sinceCursor` and `expectedRevision`. Inspect `stale_view` changes instead of blindly retrying. Use `dsh_followup(mode="queue")` for a later turn and `mode="steer"` only when guidance must enter the active turn's next step. If your supervising model changed, pass a new `caller.model`; its omitted `serviceTier` defaults to `standard` for the comparison price, applies only to this follow-up submission, and never changes the DSH route.
 6. Inspect `dsh_status` compact fields first. Request `include=["interactions"]` only when `pendingInteractionCount` is non-zero or you need the exact request ids. `dsh_followup` is not an answer channel.
 7. Answer questions only with `dsh_answer_question` and the exact pending request id/typed answers. Never infer sensitive credentials, publishing, or release answers.
-8. Treat every approval as sandbox escalation. Never auto-allow. Never auto-approve. Use `dsh_resolve_approval(..., outcome="allow_once")` only after the supervising user/Codex approval boundary; `reject` is the fail-closed response.
+8. Treat every approval as sandbox escalation. Never auto-allow. Never auto-approve. Use `dsh_resolve_approval(..., outcome="allow_once")` only after the supervising human approval boundary; `reject` is the fail-closed response.
 9. Use `dsh_cancel(scope="turn")` to cancel only the active turn while preserving queue. Use `scope="queue"` only with a current queue snapshot and expect a non-atomic per-item result.
 10. Independently inspect DSH-produced files and test evidence before accepting the work. When collaboration is over, call `dsh_release_workspace`; this does not close the DSH session.
 
@@ -33,7 +35,7 @@ Use the `dsh_*` MCP tools only with the user's already managed official DSH Web 
 - Pending questions/approvals are live Host envelopes keyed by stable rpcId and are not persisted with their text. A `not-pending` receipt may mean another DSH Web client won the race.
 - `dsh_cancel(scope="turn")` does not kill DSH background jobs. Third-party tools must honor AbortSignal; use DSH job controls for background work.
 - Host restarts lose process-local active/pending/queue/job state. Do not promise seamless recovery.
-- A workspace claim is cooperative, persistent across turn completion, and shared only by bridge processes using the same bridge home. It does not select, enforce, or verify the DSH Host filesystem sandbox (`workspaceClaimSemantics.controlsDshSandbox=false` by design). While a task holds `exclusive-write`, the supervising Codex must not edit that cwd. DSH Web, a different bridge home, and ordinary shell/editor writes are outside enforcement.
+- A workspace claim is cooperative, persistent across turn completion, and shared only by bridge processes using the same bridge home. It does not select, enforce, or verify the DSH Host filesystem sandbox (`workspaceClaimSemantics.controlsDshSandbox=false` by design). While a task holds `exclusive-write`, the supervising Claude Code session must not edit that cwd. DSH Web, a different bridge home, and ordinary shell/editor writes are outside enforcement.
 - Do not change `DSH_HOST_URL` while reusing a bridge home. Task mappings do not persist Host affinity, so use a separate `DSH_BRIDGE_HOME` for another Host.
 
 The user can inspect and interact with the same root/descendant sessions in DSH Web because all sessions are created through the configured official Host registry.

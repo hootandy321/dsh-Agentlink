@@ -4,6 +4,19 @@
 渠道发布的 `@deepseek-ai/dsh@0.1.2-rc.1`，不依赖 `0.1.5-alpha.1`。
 调用侧 MCP 和这个 Cordis bundle 分别安装。
 
+## 0.1.0 更新内容
+
+这是与 dsh-Agentlink `0.2.0` 配套的首个 DSH companion 版本：
+
+- 在 DSH 原生 session 详情栏增加 Agentlink 入口，按调用来源、run、root session 和 child session 导航。
+- 提供三个费用视角：当前 session、本次 `runId` 涉及的全部 session，以及当前 DSH Host 内所有 Agentlink 调用的累计统计。
+- 记录调用方主模型，用同一组已观测 token 对比 DSH 实际模型和主模型的 API 价格；调用方模型只用于比较，不会改变 DSH 的执行路由。
+- 将 `input`、`cache read`、`cache write` 和 `output` 分桶计价；未知价格、缺失 usage、无法确认归属的请求保持未知并显示覆盖范围，不按零计算。
+- 统计写入 DSH 的原生 `storageDomain`，不保存 prompt、工具正文或 API key；查询按需读取摘要，避免把逐请求明细塞进主 agent。
+
+> **API 费用对比截图占位** —— 可以在此放置 DSH 右栏中 session、run 和累计金额的最终截图。
+<!-- 建议文件名：assets/agentlink-api-price-comparison.png -->
+
 ## 构建与安装
 
 在仓库的 `dsh-plugin` 目录执行：
@@ -21,8 +34,7 @@ dsh plugin add /absolute/path/dsh-agentlink-dsh-plugin-0.1.0.tgz --profile web
 ```
 
 如果 Host 使用自定义数据目录，给命令传入同一个 `DSH_HOME`。然后重启该
-Host 并刷新网页。不要在有运行中任务时直接重启。
-本次开发只在独立测试 Host 安装，未变更你的日常 Host。
+Host 并刷新网页。不要在有运行中任务时直接重启；升级前先等待已有任务结束。
 
 打开会话顶部 **Agentlink** 按钮：
 
@@ -33,6 +45,20 @@ Host 并刷新网页。不要在有运行中任务时直接重启。
 来源分组属于插件导航；不会把 Codex/Claude 伪装成工作目录，或改动会话 cwd。
 费用是同量 token、同缓存结构的 API 价格试算，不是订阅账单节省。
 缺价格、缺 usage、手动续写等情况显示覆盖率和原因，不能当零。
+
+三个费用视角的边界如下：
+
+| 视角 | 统计范围 |
+|---|---|
+| 当前 session | 当前 session 自己产生的 DSH 请求；子 session 不会重复加到父项 |
+| 当前 run | 同一个 `runId` 下已归属的根 session、子 session 和可证明关联的内部请求 |
+| 插件累计 | 当前 DSH Host 内所有 Agentlink run 的去重集合；不跨 Host 合并，也不包含普通 DSH 会话 |
+
+“预估节省”是把相同观测 token 桶代入另一套 API 单价后的差值。它不代表
+主模型实际重做任务的 token 数，也不代表 Codex 或 Claude Code 的订阅额度。
+DSH 手动续写默认只增加 DSH 实际费用；只有显式登记新的 comparison submission
+才会进入主模型可比较集合。并发排队无法精确归属时显示不可比较，不使用最新
+caller 模型覆盖历史记录。
 
 ## 调用归属与模型
 
