@@ -140,7 +140,7 @@ The caller can then delegate the task, observe its event stream, continue the sa
 - `dsh_continue` — compatibility alias for `dsh_followup`
 - `dsh_status` — availability, execution, content-free launch route/failure state, lineage, queue, pending interactions, final message, cursors, and workspace claim semantics
 - `dsh_tail` — bounded event digests using a bridge task cursor
-- `dsh_wait` — wait up to 30 seconds for a durable event, state change, pending interaction, or terminal status
+- `dsh_wait` — wait up to 30 seconds; by default return only when the current turn is terminal, an interaction needs attention, availability is lost, or the timeout expires, and silence ordinary cursor/queue/status churn in between (use `until="change"` to wake on any state change, and `responseMode="full"` for the diagnostic status snapshot)
 - `dsh_observe` — compatibility alias around `dsh_wait`; bridge cursors replace raw session seq cursors
 - `dsh_cancel` — `scope="turn"|"queue"`
 - `dsh_list` — task mappings enriched with current derived status
@@ -150,7 +150,7 @@ The caller can then delegate the task, observe its event stream, continue the sa
 
 Normal delegation has no model argument. Configure the desired model only when installing or adjusting DSH. Each delegate reads `session.models.current` and trusts the Host's `routable` boolean; it neither changes the model nor derives routability from catalog groups.
 
-`dsh_wait` observes durable bridge state. Assistant delta/chunk frames and top-level `session/projection` snapshots are skipped, so they do not bump the task revision or wake waiters; complete final messages remain observable through status/tail after the turn ends.
+By default `dsh_wait` returns an `until="terminal"` result in `responseMode="compact"`: it consumes ordinary cursor, queue, and status churn inside the same bounded MCP call and only wakes the caller for a terminal current turn, a pending question/approval, Host/session availability loss, or a timeout. Compact output includes only caller-actionable fields plus a `wakeReason`, so durable tool/session events no longer flood the caller's context. Assistant delta/chunk frames and top-level `session/projection` snapshots are still skipped entirely and never bump the task revision. Pass `until="change"` and `responseMode="full"` to keep the legacy diagnostic behavior of waking on every observable change with the full status snapshot. Complete final messages remain observable through status/tail after the turn ends.
 
 ## Roadmap
 

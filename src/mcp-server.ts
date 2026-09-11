@@ -10,9 +10,15 @@ import { EventLedgerError } from "./event-ledger.js";
 const taskIdSchema = z.string().regex(/^dsh_[a-f0-9]{12}$/);
 const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
 const writeOnce = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } as const;
+const terminalExecutions: ReadonlySet<string> = new Set(["turn_completed", "failed", "canceled", "interrupted"]);
 
-function result(value: unknown) {
-  return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
+type WaitUntil = "terminal" | "change";
+type WaitResponseMode = "compact" | "full";
+type WaitWakeReason = "terminal" | "interaction" | "availability" | "change" | "timeout";
+type ServiceWaitResult = Awaited<ReturnType<BridgeService["wait"]>>;
+
+function result(value: unknown, compact = false) {
+  return { content: [{ type: "text" as const, text: compact ? JSON.stringify(value) : JSON.stringify(value, null, 2) }] };
 }
 
 function errorBody(error: unknown): Record<string, unknown> {
@@ -57,12 +63,91 @@ function writePreconditions(sinceCursor?: number, expectedRevision?: number): Wr
   };
 }
 
-async function handled<T>(operation: () => Promise<T>) {
+async function handled<T>(operation: () => Promise<T>, compact = false) {
   try {
-    return result(await operation());
+    return result(await operation(), compact);
   } catch (error) {
     return failure(error);
   }
+}
+
+function meaningfulWakeReason(status: ServiceWaitResult["status"]): Exclude<WaitWakeReason, "change" | "timeout"> | undefined {
+  if (status.pendingInteractions.length > 0) return "interaction";
+  if (status.availability !== "connected") return "availability";
+  if (terminalExecutions.has(status.execution)) return "terminal";
+  return undefined;
+}
+
+async function waitWithPolicy(
+  service: BridgeService,
+  taskId: string,
+  timeoutSec: number,
+  sinceCursor: number | undefined,
+  until: WaitUntil,
+): Promise<{ waited: ServiceWaitResult; wakeReason: WaitWakeReason }> {
+  const deadline = Date.now() + timeoutSec * 1_000;
+  let cursor = sinceCursor;
+  let waitSeconds = timeoutSec;
+
+  while (true) {
+    const waited = await service.wait(taskId, waitSeconds, cursor);
+    const meaningful = meaningfulWakeReason(waited.status);
+    if (meaningful !== undefined) {
+      return {
+        waited: waited.timedOut ? { ...waited, timedOut: false } : waited,
+        wakeReason: meaningful,
+      };
+    }
+    if (until === "change" && !waited.timedOut) return { waited, wakeReason: "change" };
+    if (waited.timedOut || Date.now() >= deadline) {
+      return { waited: waited.timedOut ? waited : { ...waited, timedOut: true }, wakeReason: "timeout" };
+    }
+
+    cursor = waited.nextCursor;
+    waitSeconds = Math.min(30, Math.floor((deadline - Date.now()) / 1_000));
+    if (waitSeconds <= 0) return { waited: { ...waited, timedOut: true }, wakeReason: "timeout" };
+  }
+}
+
+function compactPendingInteraction(envelope: ServiceWaitResult["status"]["pendingInteractions"][number]) {
+  if (envelope.payload.type === "question/requested") {
+    return {
+      requestId: envelope.rpcId,
+      type: envelope.payload.type,
+      sessionId: envelope.payload.sessionId,
+      questions: envelope.payload.questions,
+    };
+  }
+  return {
+    requestId: envelope.rpcId,
+    type: envelope.payload.type,
+    sessionId: envelope.payload.sessionId,
+    approvalId: envelope.payload.approvalId,
+    toolName: envelope.payload.toolName,
+    ...(envelope.payload.callId === undefined ? {} : { callId: envelope.payload.callId }),
+    ...(envelope.payload.reason === undefined ? {} : { reason: envelope.payload.reason }),
+  };
+}
+
+function compactWaitResult(waited: ServiceWaitResult, wakeReason: WaitWakeReason) {
+  const status = waited.status;
+  return {
+    taskId: status.taskId,
+    rootSessionId: status.rootSessionId,
+    timedOut: waited.timedOut,
+    wakeReason,
+    availability: status.availability,
+    execution: status.execution,
+    lastKnownExecutionStatus: status.lastKnownExecutionStatus,
+    nextCursor: waited.nextCursor,
+    connectionRevision: status.connection.revision,
+    pendingInteractions: status.pendingInteractions.map(compactPendingInteraction),
+    finalMessageStatus: status.finalMessageStatus,
+    ...(status.finalMessage === null ? {} : { finalMessage: status.finalMessage }),
+    ...(status.contentUnavailable === false ? {} : { contentUnavailable: status.contentUnavailable }),
+    ...(status.recovery.state === "reconciled" ? {} : { recovery: status.recovery }),
+    ...(status.coordinationFailure === null ? {} : { coordinationFailure: status.coordinationFailure }),
+  };
 }
 
 export function createMcpServer(service: BridgeService): McpServer {
@@ -173,17 +258,32 @@ export function createMcpServer(service: BridgeService): McpServer {
     "dsh_wait",
     {
       description:
-        "Wait at most 30 seconds for a new task cursor, status/availability change, terminal state, or pending interaction. It never waits for whole-task completion.",
+        "Wait at most 30 seconds. By default, ignore ordinary cursor/queue/status churn and return only when the current turn is terminal, an interaction needs attention, availability is lost, or the timeout expires. Compact mode omits the full internal status snapshot. Use until=change and responseMode=full only for legacy diagnostic behavior.",
       inputSchema: z
         .object({
           taskId: taskIdSchema,
           timeoutSec: z.number().int().min(0).max(30).default(30),
           sinceCursor: z.number().int().min(0).optional(),
+          until: z
+            .enum(["terminal", "change"])
+            .default("terminal")
+            .describe("terminal suppresses intermediate task changes; change returns on the next observable change."),
+          responseMode: z
+            .enum(["compact", "full"])
+            .default("compact")
+            .describe("compact returns only caller-actionable state; full includes the diagnostic status snapshot."),
         })
         .strict(),
       annotations: readOnly,
     },
-    async ({ taskId, timeoutSec, sinceCursor }) => handled(() => service.wait(taskId, timeoutSec, sinceCursor)),
+    async ({ taskId, timeoutSec, sinceCursor, until, responseMode }) =>
+      handled(
+        async () => {
+          const { waited, wakeReason } = await waitWithPolicy(service, taskId, timeoutSec, sinceCursor, until);
+          return responseMode === "full" ? { ...waited, wakeReason } : compactWaitResult(waited, wakeReason);
+        },
+        responseMode === "compact",
+      ),
   );
 
   server.registerTool(
