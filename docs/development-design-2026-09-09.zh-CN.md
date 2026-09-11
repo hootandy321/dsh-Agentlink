@@ -1,0 +1,294 @@
+# Agentlink 后续开发设计：精简监督、来源组织与成本估算
+
+- 文档状态与目标来源
+  - 日期：2026-09-09。本文是后续实现规格与开发顺序，不是已经上线的功能清单。
+  - 用户目标：主 agent 默认少收信息，有需要时自行选择详情；DSH 中按 Codex、Claude 等调用来源组织任务；右侧栏展示本 session、本次完整任务和插件累计的成本差额估算。
+  - 本轮交付：完成代码与官方发布能力核对、视角反转、架构选择、接口与数据设计、验收场景和有序开发清单。运行时实现、安装、升级和发布属于后续工作。
+  - 两条产品线
+    - A：调用侧桥接，负责精简返回、按需诊断、任务与调用方信息传递，以及新版 DSH 连接适配。
+    - B：DSH 原生配套插件，负责来源导航、任务归属、用量采集、价格计算和右侧成本面板。
+    - 两条线共享任务标识和来源信息，但 UI、用量明细不经主 agent 中转。
+  - 约束
+    - 按用户最新指示，首版全部功能基于 npm latest 发布渠道：本次核对为 0.1.2-rc.1。桥接、来源导航和右侧成本面板均不依赖 alpha；不因新 UI 包缺失而降低功能目标。
+    - 保留现有工作区占用、审批、取消和异常恢复安全措施。
+    - 不为本次需求新增 hash、冻结流程或重复的控制系统；使用普通标识、类型、存储事务、唯一记录和测试。
+    - 不为了 UI 分组更改 session 的真实工作目录，不修改模型路由，不复制完整对话到成本数据库。
+    - 用户要求的是 API 价格对照估算，不推算 Codex/Claude 订阅额度或实际订阅账单。
+
+- 已核对事实与证据范围
+  - 本仓库
+    - `src/mcp-server.ts` 将服务返回对象直接序列化；当前没有统一的面向调用者字段选择层。
+    - `src/bridge-service.ts` 的 status 是完整状态；wait 包含完整 status；tail 又包含完整 status 与中间事件摘要；list 逐任务读取 status。
+    - `src/task-store.ts` 当前只记录 taskId 与根 sessionId，且校验严格限制为两个字段。不能直接添加字段而不处理已有记录兼容。
+    - `skill/codex-dsh/SKILL.md` 建议 wait 后 tail，必须和新默认行为一起改。
+  - DSH 发布范围
+    - 本机 CLI 为 0.1.0-rc.8；2026-09-09 再次查询 npm 的 latest/next 为 0.1.2-rc.1，以该默认发布版本为实施目标。这里沿用用户“正式版”的渠道含义，不把 rc 版本称为 GA。
+    - 0.1.2-rc.1 发布包的 `dsh-api-session-controller` 声明 control/follow 流；`dsh-api-gateway` 包含 `/api/remote.mux`。
+    - 0.1.2-rc.1 的 `dsh-client-connection` 已包含启动 token 换取签名 cookie 的认证流程。旧版无认证假设不能继续沿用。
+    - 0.1.2-rc.1 工作区 attachSession 会验证真实 cwd 等于工作区 path，不能把不同目录的会话放进同一个伪工作区。
+    - 纠正前版结论：没有独立新版 sidebar-right 包不等于不能做右侧插件。0.1.2-rc.1 的 `dsh-client-ui-layout/lib/client.js` 声明 `details`（single、session scope），并提供 `ctx.layout.openDetails()` / `closeDetails()`；`dsh-client-ui-conversation/lib/client.js` 声明 `conversation.session.header.actions`（list、session scope）。这些发布包中的扩展点作为首版接入依据。
+    - 源码具备 `llm/stream`、GenerateOptions.sessionId/purpose、TokenUsage、session 历史及 DSH 存储服务；落地时对 0.1.2-rc.1 发布包验证精确导出和加载组合，不能直接使用 master 新增 API。
+    - 已下载发布包进行静态核对，没有启动隔离新版 Host，因此本文不宣称已通过端到端兼容。
+  - 官方参考
+    - [DSH npm 发布](https://www.npmjs.com/package/@deepseek-ai/dsh)
+    - [Session Controller](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/api/session-controller/README.md)
+    - [Connection](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/client/connection/README.md)
+    - [Workspace](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/workspace/workspace/README.md)
+    - [Session Query](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/session-query/session-query/README.md)
+    - [TokenUsage 与 GenerateOptions](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/llm/llm/src/types.ts)
+    - [LLM 调用扩展](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/llm/llm/src/index.ts)
+    - [官方 0.1.2-rc.1 布局包](https://www.npmjs.com/package/@deepseek-ai/dsh-client-ui-layout/v/0.1.2-rc.1)
+    - [官方 0.1.2-rc.1 会话 UI 包](https://www.npmjs.com/package/@deepseek-ai/dsh-client-ui-conversation/v/0.1.2-rc.1)
+    - [现成右侧插件参考](https://github.com/kee0012/dsh-sidebar-panel)：通过 details 列实现右侧面板，README 也披露单插槽替换限制。仅参考接入方式，未安装或执行第三方代码，不照搬其 DOM 保活、计费默认值等策略。
+    - master 链接用于定位设计来源，发布包才用于判断目标版本是否可用。
+
+- 视角反转
+  - 从用户视角问：我真的省钱了吗，数字为什么变化？
+    - 主指标必须写“预估节省”或“预估增加”，并标明同量 token 的 API 价格对照；展开后能看到两侧金额、用量覆盖情况、模型、价格来源和时间。
+    - 价格未知、用量缺失时显示部分估算或不可估算，不显示零成本，不把失败任务移出总账。
+    - UI 切换模型只改变临时试算，不悄悄重写历史任务的比较模型。
+  - 从主 agent 视角问：为了得到少量信息，是否被迫多调用几次？
+    - 正常 wait 超时返回短状态；结束带结果；问题或审批带可操作内容。成本默认不回传，显式 include 才取。
+    - 来源与模型尽量由入口适配器填充，不在每次 prompt 中重复自然语言说明。
+  - 从 DSH 使用者视角问：插件会不会弄乱项目、抢占界面？
+    - 来源导航是插件自己的视图，不替换原生项目归属；同一个原生 session 可从来源视图打开。
+    - 右侧面板跟随当前 session，不每次流式事件抢焦点；无插件归属的 session 明确显示“非 Agentlink 会话”。
+  - 从计费审阅者视角问：多 session、重试、fork 和重放会不会重复计费？
+    - 成本从请求记录聚合，不从每次 status 的累计数再次累加；继承历史不是新费用。
+    - 价格按请求时的实际 provider/model 计，不能用当前 DSH 配置给所有历史请求统一计价。
+  - 从维护者视角问：需要维持几套协议和数据库？
+    - A 使用小型版本适配层，B 通过官方插件服务持有自己的统计数据，共用纯计算类型和函数。
+    - 第一版统一针对 latest 的 0.1.2-rc.1，不同时维护 alpha UI 路线；后续正式渠道更新时再适配。
+  - 独立审阅路线
+    - dependency-expert：核对右侧栏和来源导航的官方 UI 扩展点。
+    - critic：审查反事实估算、缓存、重试、缺失数据与三层聚合。
+    - 主 agent：核对仓库、发布包、官方价格，整合规格及可执行验收。没有委派生产代码修改。
+
+- 方案比较与选择
+  - 首选：调用侧桥接 + DSH Host/Client 配套插件 + 共享计算模块
+    - Host 插件在请求发生处采集用量、维护 task/session 归属和统计；Client 插件渲染来源与右栏；桥接只传任务元信息并监督执行。
+    - 价值：浏览器关闭、调用侧退出之后仍能计量；无需让主 agent 读取过程日志；可以覆盖 DSH 内部辅助请求。
+    - 主要风险：插件扩展点和认证随 DSH 版本变化；部分 adapter 不报告 usage 或未提供 sessionId。
+  - 备选：桥接解析 session 历史，并将聚合结果推到 UI
+    - 优点：调用侧较容易复用已有历史读取逻辑。
+    - 缺点：桥接离线时采集停顿，辅助请求可能漏记，同一份正文重复跨网络传输，仍需要 DSH UI 插件。
+    - 保留用途：历史回补与只装桥接时的有限诊断；不作为实时计量主路径。
+  - 最便宜的反证试验
+    - 隔离 Host 上加载最小右栏，读当前 sessionId；用一次带缓存 usage 的调用、一次子 session、一次 compaction 检查 llm/stream 是否提供正确归属与完整次数。
+    - 若无法在不修改 DSH 核心的情况下取得辅助请求归属，必须降低对应覆盖承诺，或调整采集接入点；不能靠估计伪装完整。
+    - 若官方 UI 扩展不能挂右侧栏，应回到 UI 方案，不将独立网页冒充交付。
+
+- 任务、调用与来源模型
+  - 术语与聚合边界
+    - runId：用户一次完整任务的调用过程，可包含多个 delegate 根任务及它们的后代。它不是一次 MCP 调用，也不自动等于整个调用方聊天。
+    - taskId：沿用桥接一次 delegate 建立的根任务；followup 继续该 task，不创建新 run。
+    - sessionId：DSH 原生会话；一个 task 可包含根 session 与多个递归子 session。
+    - invocation：一次 delegate 或 followup 提交，用于记录调用方当时的模型和后续用量的归属；不是第三层 UI 总量的边界。
+  - 三层金额
+    - 本 session：仅当前 session 自己发生的请求；默认不含后代。面板可以另给“含子会话”开关，但不改变 run 的统计方式。
+    - 本次任务：同一 runId 下所有根 session、后代及已归属辅助调用的去重集合。
+    - 插件累计：当前 DSH Host 统计存储中所有 Agentlink run 的请求去重集合；包含失败、取消任务，不包含普通 DSH 会话。
+    - 不能把父 session 的含后代总额与子 session 再相加。跨 Host 全局合并属于后续选项，第一版范围必须在 UI 中注明。
+  - 来源与主模型传递
+    - 安装配置提供 caller.client，例如 codex、claude-code；调用方适配器覆盖本次实际模型，不能由 MCP 客户端名称推断模型。
+    - delegate 新增 caller 对象：client、可选 conversationId、model.provider、model.id、可选 model.serviceTier、model.source。
+    - model.source 区分入口自动获得、调用 agent 声明、用户配置；未知则明确 unknown，不猜当前模型。
+    - 用户所说 6-astra 规范为 gpt-6-astra；5.6 仅按已验证的官方别名映射到 gpt-5.6-sol。不同供应商同名模型不能自动等价。
+    - runId 不传时创建新 run 并返回；同一完整任务后续 delegate 复用返回的 runId；其他任务使用新 runId。
+    - followup 可携带新的 caller.model；只影响此次提交之后可确定归属的请求。此前记录保留原比较模型。
+    - 活跃 turn 的 steer 切换调用方模型时，本次在途请求沿用其开始时的比较信息；新请求必须有确定的提交/回合关系。无法确定时标为比较模型未知，不按最新全局设置覆盖。
+    - 归属和模型信息缺失不阻止正常执行，但成本面板不能展示完整比较。
+  - 拟议调用示例
+    - `dsh_delegate({ prompt, cwd, caller: { client: "codex", model: { provider: "openai", id: "gpt-6-astra", serviceTier: "standard", source: "caller-reported" } } })`。
+    - 简短回执增加 runId；之后同一任务的 delegate 传该 runId，followup 沿用原 task/run。
+    - DSH 执行模型仍来自 DSH 路由；caller.model 只作比较，不改变子 agent 的模型。
+  - 后代与历史
+    - 原生 parentSessionId/创建事件关联后代，继承 run/task；未收到归属时先暂存已知插件根树内记录，关系确认后聚合。
+    - fork 继承的历史费用不重算；只计新产生的请求。进程恢复后的历史解析必须识别 inheritedEventCount/版本相应标记。
+    - DSH 中手工继续插件创建的 session 仍纳入该 session 的 DSH 成本，但不默认继承最后主模型进入 P/S。只有用户或调用方显式登记新的 comparison submission 才参与替代试算。
+    - requestOrigin 区分 delegated、manual-dsh、dsh-internal、recovered-unknown；仅 delegated 和可证明属于委派 submission 的 dsh-internal 默认进入可比较集合。手工追加费用在 session/run 中单列，累计 UI 的全部 D 与可比较 D 明确区分。
+    - 第一版不允许随意把已有消费的一个 session 整体移动到另一 run；如需要复用，应按未来请求明确划分归属，避免历史金额跳动。
+
+- A：精简监督接口
+  - `dsh_status`
+    - 默认 task/run 标识、可达性、执行状态、当前 turn、操作所需 cursor/revision、简短队列状态、结果是否可取、交互数量及重要异常。
+    - include 使用明确类别：result、interactions、queue、workspace、sessions、connection、recovery、cost。类别互不暗含全量状态。
+  - `dsh_wait`
+    - wakeOn 默认 attention：结束、问题、审批、连接/恢复异常或超时；activity 为显式进度模式。
+    - 使用 DSH control 状态变化监督；普通工具/文本事件只在内部推进，保持固定截止时间。
+    - 结束带结果，阻塞带对应交互，超时返回短状态及 reason。已交付最终结果在带 sinceCursor 的等待中不重复；显式 result 可重取。
+    - control 流可能不涵盖全部问题/审批，必须继续订阅这些独立请求；不能因更换状态来源漏报。
+  - `dsh_tail`
+    - 指定事件类别、session、游标、条数和字节限制；默认不取用户 prompt、正常工具正文和流式占位事件。
+    - 不附完整 status；返回事件定位、分页/扫描游标、截断与内容可用性。
+    - 状态最新 cursor 和日志扫描 cursor 不混用；扫描不匹配事件也推进扫描位置，不能跳过未交付的匹配事件。
+  - 其他返回与错误
+    - list 分页返回轻量任务摘要，不解析最终正文。
+    - delegate/followup/cancel 保留动作结果、必要警告和标识，不反复附配置。
+    - 异常仅给错误码、原因、必要定位和可选读取类别；错误 details 不直接倾倒内部对象。
+    - alias、schema 描述、README 与 skill 同步迁移；取消无条件 wait 后 tail 的说明。
+    - 默认不附成本摘要：用户已经要求减信息，右栏另走数据接口；调用者显式 include cost 才给小摘要。
+
+- B：DSH 来源视图与成本面板
+  - 来源导航
+    - 按调用来源展示 Codex 调用、Claude 调用、其他已登记来源；每组先列 run，再展开根 task/session。
+    - 当前任务、已完成、失败可以筛选；点击打开原生 DSH session。
+    - 原生工作区仍按 cwd 组织；来源维度是插件导航，不新建伪目录或移动文件。
+    - 只回补桥接记录可证实的历史归属。未识别的历史显示未识别，不批量占用普通会话。
+    - 首版在右侧 Agentlink 面板的“调用”内部页签做来源 → run → session 导航，通过目标版本的官方 session 打开服务跳转。现有左侧 WorkspaceBrowser 未发现可插入任意来源分组的小型官方 slot；不替换整个左栏来冒充小扩展。
+    - 未来若要求来源分组直接进入左侧工作区树，需独立实现或向上游贡献 group-provider 扩展；这不属于首版右侧调用导航已经交付的能力。
+  - 右栏具体接入（0.1.2-rc.1，发布代码已核对，交互仍待运行验证）
+    - 在 `conversation.session.header.actions` 注册“Agentlink”按钮；打开时调用 `ctx.layout.openDetails()`。
+    - 使用 `details` 插槽承载 Agentlink 面板；“调用”和“成本”是面板内部 React 页签，由插件管理，不依赖上游新版 tab 服务。
+    - details 是 single 插槽，必须处理内置详情和其他右栏插件的共存。优先仅在用户打开 Agentlink 时登记自己的渲染者，返回原生详情或关闭时释放登记；精确优先级、声明生命周期与 Inspect 行为在 P0 原型验证。
+    - 不永久抢占内置详情，不用 DOM 查找/搬运/保活来维持面板。若临时注册影响内置 Inspect，应在同版官方 slot 组合能力内解决并补切换测试，不能以换 alpha 或删除原功能作为完成。
+    - 主体从 details 的 session scope 获得会话状态；遵循目标版本布局切换会话的行为。关闭/切换/HMR 清理客户端订阅，Host 采集继续；不采用新版 useTabInfo API。
+    - 依赖声明、构建和验收都使用 0.1.2-rc.1；不修改用户正在运行的 Host 来试错。
+  - 右侧“Agentlink 成本”面板
+    - 第一屏依次显示“本 session”“本次任务 · N 个 session”“插件累计 · 当前 Host”。
+    - 每层显示预估节省/预估增加、DSH 用量计价、主模型同量计价；金额可为负，不用绿色零值掩盖更贵。
+    - 默认突出本次任务；其他两层紧凑展示，展开看每 session、模型、请求用途明细。
+    - 显示比较模型、计价模式、覆盖情况与更新时间；长名称、窄栏、不足一分钱金额需可读。
+    - 状态：采集中、已结算用量、部分估算、缺少主模型、缺少价格、非插件 session、数据暂不可用。
+    - “已结算用量”仅表示 provider usage 已到达，不等于供应商账单核对完成。
+    - 价格与缺失详情按需展开；不展示 prompt、reasoning 正文、API key 或原始请求。
+    - 第一版默认 USD；小于显示精度的非零值用“小于 $0.0001”或展开精度，不显示成免费。
+  - 更新路径
+    - 浏览器读取 Host 聚合摘要，面板打开时订阅变化；大量 usage 更新合并刷新，不逐 token 重绘。
+    - 浏览器关闭或主 agent 不再轮询时，Host 插件继续计量。
+    - 成本服务异常隔离于模型执行；标记采集不完整，不改变请求内容、路由、重试或取消。
+
+- 计费口径与计算
+  - 指标定义
+    - D：DSH 已观测 usage 按实际执行 provider/model 的价格估算，名称为“DSH 用量计价”，不是实际扣款。
+    - P：相同已观测 token 数量按当时调用方主模型 API 价目计价，名称为“主模型同量估算”。
+    - S = P - D：名称为“预估节省”；S < 0 展示“预估增加”。比例仅在 P > 0 时为 S/P。
+    - 这是价格替代试算，不预测主模型完成相同任务会使用相同 token、相同工具步数、相同缓存或达到相同质量。
+    - 不将“精简返回减少的主 agent token”再加到 S；未观测的主 agent 编排/验证成本和外部工具费用不在该指标里。
+  - 请求级公式
+    - 对每个请求，按互斥用量桶计算 `(uncachedInput × inputRate + cacheRead × readRate + cacheWrite × writeRate + output × outputRate) / 1,000,000`，再加已明确可归属的其他计费项。
+    - DSH 最新 TokenUsage.inputTokens 是未缓存输入，和 cacheReadTokens/cacheWriteTokens 互斥；不能再从它扣缓存。
+    - reasoningTokens 若已含在 outputTokens，仅用于细分展示，不能再次收费；适配器必须明确统计语义。
+    - provider 返回总量、累计流式 usage 或重复 usage 时按适配规则规范化，每请求只计最终权威值；总 token 不是额外可加的一桶。
+    - 每个请求独立判定长上下文阈值、服务层级及峰谷时段，之后才求和。不能用一个 run 的总输入判断单次请求档位。
+  - 缓存与跨模型假设
+    - 默认“同量同缓存结构试算”：将 DSH 已报告缓存桶映射到比较模型对应计费桶，UI 清楚标注这是缓存结构假设，不代表主模型真实命中。
+    - 可以选择“主模型无缓存试算”，把输入归入普通输入价；这会提高估算差额，必须显式显示模式，不作为隐含默认。
+    - 比较模型不支持对应桶、缺少必要长上下文分类或单位不兼容时，该请求比较不可用；不要自动拿普通价补齐并称精确。
+    - 图像等 provider-specific token 单位默认不作跨模型等效；仅在已明确计费映射时进入可比较集合，否则单列 DSH 成本与排除原因。
+  - 缺失与汇总
+    - 对可比较请求集合 E 同时求 P(E) 与 D(E)，只对同一集合计算 S；另列全部可计价 D，不能让两边集合不同。
+    - 有未比较请求时只能展示“已覆盖部分的预估差额”，完整 run 的预估节省显示不可确定。
+    - 覆盖情况给已观测请求数、带 usage 数、可计 D 数、可双侧计价数、已知缺失/未归属数；只按已知分母算比例，不声称未知请求数量为零。
+    - 无 usage 不等于免费；失败、取消、超时、重试都可能计费；有 usage 的照计，没有的记未知。
+  - 价格目录
+    - exact provider/渠道 + model + serviceTier + currency + 生效时间为查价条件；支持缓存、长上下文和日历时段规则。
+    - 官方直连匹配官方价；第三方转发、自建模型优先配置渠道自定义价。不能因名字是 deepseek 就套官方直连价，自建也不能默认零成本。
+    - 目录记录 sourceUrl、checkedAt、validFrom/validTo（官方未提供时不杜撰）、计费单位、来源类型及规则。
+    - 结算记录引用当时使用的价格条目和规则版本；新价格不无声重算历史。用户明确选择“按新价格试算”时单独呈现。
+    - 初版使用有来源的随版本价目文件与自定义覆盖；提供手动刷新/校验入口，网络失败保留旧值并标明时间。无需每次模型调用上网抓价。
+    - 2026-09-09 核对的例子（仅说明规则复杂度，运行时不能写死在 UI）
+      - [gpt-6-astra](https://developers.openai.com/api/docs/models/gpt-6-astra)：标准普通输入 $10/M、缓存读 $1/M、输出 $50/M；另有缓存写和长上下文等规则。
+      - [gpt-5.6-sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol)：标准普通输入 $4/M、缓存读 $0.40/M、输出 $20/M；页面说明 gpt-5.6 别名路由与促销期限。
+      - [DeepSeek 官方价目](https://api-docs.deepseek.com/quick_start/pricing/)：包含工作日 UTC 峰谷时段；按模型名乘一个常数不足以计价。
+
+- Host 采集与最小数据结构
+  - 采集接入
+    - 优先使用 `llm/stream` 官方扩展，只观察 options 的 provider/model/sessionId/purpose 和 usage/finish；原样 yield，不修改请求、不新增模型调用。
+    - 该接入有机会覆盖 conversation、compaction、session-title；在隔离 Host 实证每类调用与重试的实际拦截次数、归属及最终 usage。
+    - 不占用全局唯一 telemetry backend，不把成本统计依赖于发送完整对话的遥测导出。
+    - 历史解析作为回补：assistant/message 的 usage 与其内嵌 stream 只能选一次；assistant/attempt、compaction 等按目标版本适配。无法与在线记录确定对应时不盲目合并。
+    - provider 内部重试未单独公开、进程在 usage 到达前退出等情况保留 incomplete；后续从可验证持久化记录补齐，不能声称可还原供应商未上报的账单。
+  - 数据归属与保存
+    - DSH Host 插件持有统计数据，使用自己的 DSH storageDomain 命名空间。A/B 通过认证 Remote 通信，不要求远程 Host 能读调用方本地 bridge home。
+    - 保存计量元数据，不保存消息、工具正文或凭据。
+    - run：runId、callerClient、可选 callerConversationId、名称、创建时间。
+    - task/session 关系：runId、taskId、rootSessionId、sessionId、parentSessionId、归属来源、开始时间。沿用原生 sessionId 和现有 taskId。
+    - submission：提交标识、task/run、callerModel、来源可信度、实际关联 turn/请求范围；仅增加实现模型切换归属所需字段。
+    - usage：requestRecordId、sessionId、submission 关联、requestOrigin、provider/model、purpose、开始时间、互斥 token 桶、完成状态、usage 来源、可选原生日志定位。
+    - requestRecordId 在一次实际拦截调用入口创建普通 UUID，流式 usage 与 finish 更新同一记录；不在每个 usage chunk 重新生成。单一 Host 服务拥有采集注册，HMR 释放旧 listener；是否每个 provider attempt 都通过此入口由 P0 实测。
+    - 历史定位采用原生 sessionId、formatVersion、eventSeq 与该事件内实际 attempt 位置；存储建立唯一 source locator，并关联到在线 requestRecordId。实时 settlement 只能在确定的请求/事件关联下补此定位，不能按时间接近、相同 token 或内容猜配。
+    - 在线记录与历史记录有确定关联时更新同一行；无法关联的历史 usage 标记 unmatchedHistoricalUsage，不与在线结算额相加，并标明统计不完整。全历史导入只在已确认没有在线重叠的范围执行。
+    - pricing：上述价目条目；金额使用十进制或定点表示，聚合后统一显示舍入。
+    - 普通主键与原子写入避免事件重放重复插入；持久化支持何种事务由第一步接入试验确认，不另外构造通用分布式账本。
+  - 创建顺序与恢复
+    - 在首次 prompt 前向 Host 配套插件登记 task/run/caller 与新 session，确保最早费用能归属。
+    - session 已创建而登记/提交失败时返回已有 session/task 和阶段；不得自动重试整个 delegate 创建第二份任务。
+    - 关联信息可补写，计量缺失不要求取消已启动工作。配套插件未装时桥接仍可监督，但明确组织/统计能力不可用。
+    - 旧两字段 task 文件兼容读取；扩展元信息放独立记录或使用向后兼容的新格式读取路径，普通测试覆盖迁移。
+    - 保存已结算用量后，删除原 session 不应把历史总额抹掉；UI 标明原 session 已不可打开。删除统计是显式操作，不随归档联动。
+
+- 模块边界与建议文件布局
+  - 保留现有 src 桥接入口，减少一次性工程重构。
+  - `src/dsh-client.ts`、`src/dsh-types.ts`、`src/connection-manager.ts`：新版认证与 Remote/control/follow 适配；内部细节不直接出现在工具返回。
+  - `src/bridge-service.ts`、`src/mcp-server.ts`：summary/include、wakeOn、游标语义和 caller/run 参数。
+  - 拟新增共享模块：caller/run 类型、usage 规范化、价格解析与纯函数计算；具体目录随构建方式确定，不先搬动全部代码。
+  - 拟新增 `dsh-plugin/`：独立子目录与 package.json，包名暂定 `dsh-agentlink-dsh-plugin`，不与根包 `dsh-agentlink` 同名；第一版不做全仓 npm workspaces 迁移。含 Host 服务、Remote 读接口、Client 面板及独立 tsconfig/build/pack。
+  - 共享纯函数由两个构建入口打包进各自交付物，不在已安装 DSH 包中引用仓库外的父目录源码；bundle 产物完整性测试必须覆盖这一点。
+  - DSH 插件 manifest、patch、构建输出按目标版本官方示例生成；不套用 Codex 插件清单，不提交仅占位的空 DSH 包。
+  - DSH UI 数据 API（拟议）
+    - `agentlink.runs.list`：来源/状态/时间筛选及分页。
+    - `agentlink.cost.summary`：session/run/all 三层小摘要。
+    - `agentlink.cost.details`：按 session/model/purpose 分页明细。
+    - `agentlink.prices.list`：价格来源与覆盖情况；更新配置单独操作。
+    - 这些是设计名称，需按 DSH Remote 生成约定落地，不宣称上游已内置。
+
+- 有序开发清单与验收
+  - P0 · must · 新版最小接入与可行性
+    - 价值：尽早发现认证、右栏、usage 接入不成立；依赖无；主要风险是上游发布差异。
+    - 实作：隔离的 0.1.2-rc.1 环境验证核心认证、create/prompt、control/follow、问题审批；验证 header 按钮 + details 面板、与原生 Inspect 的切换及关闭恢复；验证 LLM usage/重试/辅助调用。所有功能以同一发布版验收。
+    - 人员路线：主实现 + dependency-expert；证据为版本、接口测试和隔离 Host 记录。
+    - 继续条件：最小闭环通过；失败回到对应接入设计，不升级用户现用 Host 来试错。
+  - P1 · must · 调用信息精简
+    - 价值：直接降低主 agent 输入；依赖 P0 通信结论；风险是遗漏交互和游标错误。
+    - 实作：summary/include、attention wait、tail 筛选、list 轻量化、文档和 alias 同步。
+    - 人员路线：实现与测试；证据为固定轨迹改前后输出字节、返回事件数、等待唤醒数、历史正文请求次数；有 tokenizer 时另测 token，不混淆字节与 token。
+    - 继续条件：正常工具事件不唤醒，超时不被延长，问题审批及时返回，匹配事件不漏不重。
+  - P2 · must · caller/run 关联与来源导航
+    - 价值：同一任务多个根 session 的统一归属，也是成本汇总前提；依赖 P0；风险是遗失或错误继承。
+    - 实作：caller model、runId 透传，Host 关系记录，子会话递归归属，来源列表与原生 session 打开。
+    - 人员路线：实现 + UI；证据为两来源、两 run、多根、多层子会话、followup、fork 的关系与导航测试。
+    - 继续条件：不同任务不串账，工作目录不变，未知来源不冒认，两个来源可真实显示。
+  - P3 · must · 用量与价格引擎
+    - 价值：生成可解释金额；依赖 P2 与 P0 采集结论；风险是重复/漏记和错误单价。
+    - 实作：请求级 usage、路由、时间、用途；价格目录；D/P/S 与覆盖统计；存储恢复与回补。
+    - 人员路线：实现 + test-engineer/critic；证据为手算 fixtures 与在线采集对照。
+    - 继续条件：重放不涨账、失败计入、缓存/推理不重复、切换模型分段计价、缺失显示部分而非零。
+  - P4 · must · 右侧成本面板
+    - 价值：交付三层可见结果；依赖 P2/P3；风险是范围不清和来源数据泄漏。
+    - 实作：三层摘要、模型价格说明、请求明细、缺失状态、右栏跟随 session；不自动回传主 agent。
+    - 人员路线：UI + 审阅；证据为窄栏/大数/负值/未知/切换会话/重启/浏览器关闭后计量验证。
+    - 继续条件：单 session、本 run、全插件范围正确；非插件会话不会显示其他任务的本 session 数据。
+  - P5 · must · 打包与完整验证
+    - 价值：确保实际可安装使用；依赖 P1–P4；风险是本地 build 成功但发布包缺产物。
+    - 实作：桥接与 DSH bundle 的安装说明、兼容说明、官方扩展点卸载清理、完整打包检查。
+    - 人员路线：主 supervisor + verifier；证据为 `npm run check`、`npm --prefix dsh-plugin run build`、在 dsh-plugin 内执行 pack、0.1.2-rc.1 核心与完整右侧 UI 闭环及产物清单（子包命令为实施后新增）。
+    - 继续条件：文档明确已测版本与未覆盖限制；正式发布仍按项目要求另行执行。
+  - P6 · should · 历史回补、价格刷新与用户自定义报价
+    - 价值：改善历史和第三方模型覆盖；依赖 P3；风险是无根据重建历史。
+    - 证据：只归入明确 session，旧价不被自动覆盖，无价/无 usage 仍保留未知。
+  - P7 · could · 主 agent 自身成本导入与跨 Host 合并
+    - 价值：未来可展示更完整实际编排成本；依赖调用方提供可验证计量与可靠归属。
+    - defer：第一版不读取个人账户账单、不扫描全部 Codex/Claude 聊天、不把订阅额度折算成现金。
+
+- 验证与回退规则
+  - 算术与归属测试
+    - 单次 1000 未缓存输入、2000 缓存读、100 输出按测试价手算；reasoning 为输出子集时总额不变。
+    - 两 root + 两 descendant 的 run 合计等于四个互斥请求集合；多个 run 的累计只做并集。
+    - 重连、HMR、history 回补、重复 usage 与 fork inherited history 不增加已计请求。
+    - 单请求跨长上下文阈值、UTC 峰谷边界、价格缺失、模型切换、负差额、取消有 usage/无 usage 分别有预期结果。
+    - 部分可比请求的 P/D 使用同一个集合，不能展示完整任务已节省。
+  - 行为与 UI 测试
+    - default wait 不回正文，完成/审批/提问直接可处理；tail 过滤后的 cursor 能继续向前。
+    - 未知主模型依然允许委派；UI 显示待选择比较模型，不伪造数额。
+    - Host 插件持续计量与浏览器是否打开、主 agent 是否 wait 无关；统计异常不影响模型流。
+    - 在目标 DSH 中看到真实右侧栏和来源入口，打开原生会话；仅静态截图不算运行验证。
+  - 监督与后续阶段
+    - 本文作为后续 `$ralph-implement` 的输入；不要要求再建立冻结目标或重复审批来开始已授权的可逆实现。
+    - raf-dispatch：P0 先行；P1 与 P2 可在明确文件所有权后并行；P3 后再做 P4；P5 最后集成。
+    - raf-verify：主 supervisor 检查 agent 输出、代码、测试和真实 Host 证据；价格或金额结论必须可追到对应请求与来源。
+    - raf-backprop：UI 扩展点不存在、请求无法归属、用量不够计算时回到架构；若用户希望真实账单因果节省则重新明确目标；普通计算/展示错误留在实现修复。
+    - 不因实现困难默默改成“标题前缀即分组”“按上下文估计累计消费”或“独立网页即右侧栏”。
+
+
+实现与实际发布版联调结果见 [开发记录](implementation-2026-09-09.zh-CN.md)。

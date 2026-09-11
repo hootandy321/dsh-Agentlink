@@ -20,6 +20,22 @@ dsh-Agentlink 是一个让你直接在原本的 AI 工作工具里调用 DeepSee
 
 目前只有标记为**已支持**的调用方在本仓库中提供可用安装路径。“适配中”和“待适配”是当前方向，不代表发布承诺。
 
+默认监督只返回短状态；详情由 `include` 选择。相同任务的多次委派可复用 `runId`，并传入主模型 `caller.model`。DSH 右栏来源导航和成本估算由独立的 [DSH 配套插件](dsh-plugin/README.md) 提供。
+
+## 0.2.0 更新内容
+
+`0.2.0` 是调用侧 bridge 的二级版本更新；单独安装的 DSH 配套插件版本为 `0.1.0`。
+
+- **默认减少监督信息。** `dsh_status` 默认只返回监督任务所需的摘要；需要时通过 `include` 选择 `result`、`interactions`、`queue`、`workspace`、`sessions`、`connection`、`recovery` 或 `cost`。`dsh_wait` 默认使用 `attention`，普通工具进度和流式 chunk 不会唤醒主 agent；需要逐步进度时再显式使用 `wakeOn="activity"`。`dsh_tail` 支持按事件、session、有界条数和游标读取，不再每次附带完整 status。
+- **调用来源和任务归属。** 一个 `runId` 可以串起多个委派根任务及其 DSH 子 session。每次 submission 都可以带调用方和主模型（`provider`、`id`、`serviceTier`、来源），因此 Codex、Claude Code 等来源可以分组并进行 API 价格对比，同时不改变 DSH 中配置的执行模型。归属不明确或提交重叠时保留为未知，不用最新调用方设置猜测。
+- **Claude Code 与 preset 感知安装。** Codex 和 Claude Code 都有独立的安装路径。Claude 安装器将项目 MCP 与 skill 限定在选定项目，分别报告信任、审批和 Host 状态，并保留无关配置。preset 感知路由当前只做只读校验和解析结果报告。
+- **DSH 配套插件右栏。** 插件在 DSH session 顶部增加 Agentlink 入口，打开原生右栏标签页，按来源（例如 Codex、Claude Code）→ run → session 组织调用，并通过原生 catalog 打开根 session 和子 session。面板同时展示当前 session、这次完整 run，以及当前 Host 内插件累计的统计。
+- **API 价格对比。** 面板使用相同的已观测未缓存输入、缓存读取、缓存写入和输出 token 桶，对比 DSH 执行模型与调用方主模型的 API 价格。这是价格替代试算，不是订阅账单，也不说明主模型实际会使用相同 token。价格未知或 usage 缺失时保留未知，绝不显示为零；DSH 手动续写默认只计 DSH 费用，除非显式登记新的调用方比较关系。
+- **官方 DSH 目标版本。** 当前验证目标是官方 npm `latest` 渠道的 DSH `0.1.5-rc.1`。本次更新以默认发布渠道为准；调用侧 bridge 与 DSH 配套插件分别安装。
+
+> **API 费用对比截图占位** —— 发布审核后可在此放入最终的价格对比截图。
+<!-- 建议文件名：assets/agentlink-api-price-comparison.png -->
+
 ## 安装
 
 安装前先准备环境：只需要 **Node.js 22+**、一个已支持的调用方（**Codex 或 Claude Code**）和可以正常运行的 **DSH CLI**。先在 DSH 中配置一次你希望使用的模型，之后 dsh-Agentlink 会自动使用当前路由。
@@ -40,7 +56,7 @@ Claude Code 会安装项目 MCP 入口和随仓库提供的项目 skill；只有
 
 ### 手动安装
 
-1. 检查环境。当前经过测试的 DSH CLI 目标是 `0.1.0-rc.6` 与 `0.1.0-rc.7`。
+1. 检查环境。当前经过测试的 DSH CLI 目标是 `0.1.5-rc.1`。
 
    ```bash
    node --version
@@ -53,7 +69,9 @@ Claude Code 会安装项目 MCP 入口和随仓库提供的项目 skill；只有
    dsh web
    ```
 
-3. 克隆仓库并安装依赖。
+   正式版 Host 启动链接含 token。通过 `DSH_HOST_TOKEN` 环境变量将它提供给 MCP 进程；Host 地址仍只填 origin，详见[手动配置](docs/manual-configuration.zh-CN.md)。
+
+3. 克隆仓库、安装依赖并运行配置向导。
 
    ```bash
    git clone https://github.com/hootandy321/dsh-Agentlink.git
@@ -97,7 +115,7 @@ doctor 会以只读方式报告 `DSH_BRIDGE_HOME` 下的 fail-closed 锁位置�
 
 当前源码补丁会阻止新的 projection/chunk 洪峰继续扩大 coordination ledger，但不会自动压缩已有的 5 MB 以上 ledger。请保留旧 bridge home 备查；新的委派可以选择独立的 `DSH_BRIDGE_HOME`。对话真源始终是 DSH `session.history`，不是 bridge ledger。保守恢复边界见[已知问题](KNOWN_ISSUES.md)。
 
-dsh-Agentlink 是安装在调用方一侧的插件，不是 DSH Cordis bundle；请不要使用 `dsh plugin --profile ... add ...` 安装。
+根目录 dsh-Agentlink 是调用侧 MCP，不是 DSH Cordis bundle；不要用 `dsh plugin` 安装根目录。`dsh-plugin/` 是另行构建安装的 DSH 配套插件。
 
 ## 为什么需要 dsh-Agentlink？
 
@@ -138,9 +156,9 @@ DSH 为复杂任务提供持久 session、工具调用、subagent 和人工监�
 - `dsh_delegate` — 创建 root session 并排队初始 prompt；默认 detached（`waitSeconds=0`）；`workspaceMode` 是 bridge-local claim，不是 DSH sandbox selector
 - `dsh_followup` — 以显式 `mode="queue"|"steer"` 继续同一个 root session；默认 `queue`
 - `dsh_continue` — `dsh_followup` 的兼容别名
-- `dsh_status` — 返回 availability、execution、无内容的启动路由/失败状态、lineage、queue、pending interaction、final message、cursors 和 workspace claim semantics
+- `dsh_status` — 默认返回 availability、execution 和 cursor 摘要；通过 `include` 选择结果、交互、启动路由、lineage、连接、费用和 workspace claim semantics
 - `dsh_tail` — 使用 bridge task cursor 读取有界事件摘要
-- `dsh_wait` — 最多等待 30 秒，直到出现 durable event、状态变化、pending interaction 或 terminal 状态
+- `dsh_wait` — 最多等待 30 秒，默认在需要处理、结束或异常时返回；普通进度需显式选 `wakeOn="activity"`
 - `dsh_observe` — `dsh_wait` 的兼容别名；bridge cursor 取代原始 per-session seq cursor
 - `dsh_cancel` — `scope="turn"|"queue"`
 - `dsh_list` — 列出 task mapping，并附带当前派生状态
@@ -163,6 +181,8 @@ DSH 为复杂任务提供持久 session、工具调用、subagent 和人工监�
 
 ## 更多文档
 
+- [0.2.0 发布说明](docs/release-0.2.0.zh-CN.md) — 默认精简监督、调用归属、DSH 配套插件和 API 费用对比边界
+- [更新记录](CHANGELOG.md) — 调用侧 bridge 和配套插件的版本变更
 - [架构与安全模型](docs/architecture.zh-CN.md) — 身份、状态、恢复、审批、取消与工作区协作
 - [多调用方扩展架构](docs/caller-integration-architecture.zh-CN.md) — Codex、Claude Code 与后续调用方共享 Runtime 和 Integration Pack 边界
 - [插件感知路由需求](docs/plugin-aware-routing-requirements.zh-CN.md) — 面向用户配置的 DSH Harness preset 选择目标、安全边界、验收标准与延期范围
@@ -176,4 +196,4 @@ DSH 为复杂任务提供持久 session、工具调用、subagent 和人工监�
 
 [MIT](LICENSE)
 
-Alpha 说明：DSH 仍处于 developer preview，本项目是独立社区项目，不代表 DeepSeek 或 OpenAI 官方背书。`0.1.0-alpha.1` 包含一个共享账本并发问题，已在 `0.1.0-alpha.2` 中修复。升级或并发运行 bridge 前请阅读[已知问题](KNOWN_ISSUES.md)。
+发布说明：DSH 仍处于 developer preview，本项目是独立社区项目，不代表 DeepSeek 或 OpenAI 官方背书。`0.1.0-alpha.1` 的共享账本问题已纳入 `0.2.0` 发布线修复。升级或并发运行 bridge 前请阅读[已知问题](KNOWN_ISSUES.md)。

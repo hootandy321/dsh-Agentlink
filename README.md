@@ -20,6 +20,22 @@ dsh-Agentlink is a plugin that lets you use DeepSeek Harness (DSH) from the AI w
 
 Only callers marked **Supported** have an installation path in this repository today. Planned entries are directions, not release commitments.
 
+Supervision now returns compact status by default, with details selected through `include`. Reuse `runId` across delegated sessions and pass the caller model for API price comparisons. The separate [DSH companion plugin](dsh-plugin/README.md) provides source navigation and cost estimates.
+
+## What's new in 0.2.0
+
+`0.2.0` is the minor release for the caller-side bridge. The separately installed DSH companion is version `0.1.0`.
+
+- **Compact supervision by default.** `dsh_status` returns the fields needed to supervise a task. Request extra categories with `include` (`result`, `interactions`, `queue`, `workspace`, `sessions`, `connection`, `recovery`, `route`, or `cost`) when you need them. `dsh_wait` uses `attention` as its default wake policy, so ordinary tool progress and streaming chunks do not wake the primary agent; use `wakeOn="activity"` when progress-level wakeups are required. `dsh_tail` supports bounded event and session filters with an independent scan cursor and does not repeat a full status snapshot.
+- **Caller and task attribution.** A `runId` can join multiple delegated root tasks and their DSH child sessions. Each submission can carry the caller client and model (`provider`, `id`, `serviceTier`, and source), so Codex and Claude Code calls can be grouped and compared without changing the model route configured in DSH. Missing or overlapping attribution stays unknown instead of being inferred from the latest caller setting.
+- **Claude Code and preset-aware setup.** Codex and Claude Code have supported setup paths. The Claude installer keeps project MCP and skill files scoped to the selected project, reports trust and approval state, and preserves unrelated configuration. Preset-aware routing remains read-only and reports the resolved preset before execution.
+- **DSH companion panel.** The companion adds an Agentlink action in the session header that opens a native right-sidebar tab. It groups calls by source (for example Codex or Claude Code), then by run and session, and can open root and child sessions through the native DSH catalog. The panel shows this session, the complete run, and the current Host-wide Agentlink totals.
+- **API price comparison.** The panel estimates the DSH route and the caller's API route using the same observed input, cache-read, cache-write, and output token buckets. This is a price substitution estimate, not a subscription bill or a claim that the primary model would have used the same number of tokens. Unknown prices and missing usage stay unknown; they are never rendered as zero. Manual DSH continuations remain DSH-only unless a new caller comparison is explicitly registered.
+- **Official DSH target.** The tested target is the official npm `latest` channel at DSH `0.1.5-rc.1`. The `next` and `alpha` channels are not targeted; the caller bridge and the companion are installed separately.
+
+> **API price comparison screenshot placeholder** — add the final comparison screenshot here after the release review.
+<!-- Suggested filename: assets/agentlink-api-price-comparison.png -->
+
 ## Installation
 
 Prepare the environment first: you need **Node.js 22+**, a supported caller (**Codex or Claude Code**), and a working **DSH CLI**. Configure your preferred model in DSH once; dsh-Agentlink uses that live route automatically.
@@ -40,7 +56,7 @@ Do not start or stop dsh web for me. Tell me when I need to reload the selected 
 
 ### Manual installation
 
-1. Check the environment. DSH CLI `0.1.0-rc.6` and `0.1.0-rc.7` are the current tested targets.
+1. Check the environment. DSH CLI `0.1.5-rc.1` is the current tested target.
 
    ```bash
    node --version
@@ -53,7 +69,9 @@ Do not start or stop dsh web for me. Tell me when I need to reload the selected 
    dsh web
    ```
 
-3. Clone the repository and install its dependencies.
+   Pass the Host launch token to the MCP process through `DSH_HOST_TOKEN`; keep `DSH_HOST_URL` as the origin only. The default transport targets DSH `0.1.5-rc.1`.
+
+3. Clone, install, and run the setup wizard.
 
    ```bash
    git clone https://github.com/hootandy321/dsh-Agentlink.git
@@ -97,7 +115,7 @@ The doctor reports the bridge's fail-closed lock locations under `DSH_BRIDGE_HOM
 
 This source patch stops new projection/chunk floods from expanding the coordination ledger, but it does not compact an existing 5 MB+ ledger. Preserve the old bridge home for inspection; new delegations can use a separate `DSH_BRIDGE_HOME`. DSH `session.history`, not the bridge ledger, remains the conversation source of truth. See [Known issues](KNOWN_ISSUES.md) for the conservative recovery boundary.
 
-dsh-Agentlink is a caller-side plugin, not a DSH Cordis bundle. Do not install it with `dsh plugin --profile ... add ...`.
+The root dsh-Agentlink package is a caller-side MCP, not a DSH Cordis bundle. Do not install it with `dsh plugin --profile ... add ...`. The separate `dsh-plugin/` package is the installable DSH companion; follow its own README.
 
 ## Why dsh-Agentlink?
 
@@ -138,12 +156,12 @@ The caller can then delegate the task, observe its event stream, continue the sa
 - `dsh_delegate` — create a root session and queue the initial prompt; detached by default (`waitSeconds=0`); `workspaceMode` is a bridge-local claim, not a DSH sandbox selector
 - `dsh_followup` — continue the same root session with explicit `mode="queue"|"steer"` (default `queue`)
 - `dsh_continue` — compatibility alias for `dsh_followup`
-- `dsh_status` — availability, execution, content-free launch route/failure state, lineage, queue, pending interactions, final message, cursors, and workspace claim semantics
+- `dsh_status` — compact availability/execution/cursor summary; select result, interactions, launch route, lineage, connection, cost, and workspace claim semantics through `include`
 - `dsh_tail` — bounded event digests using a bridge task cursor
-- `dsh_wait` — wait up to 30 seconds for a durable event, state change, pending interaction, or terminal status
+- `dsh_wait` — wait up to 30 seconds for attention, termination, or an exception; opt into `wakeOn="activity"` for ordinary progress
 - `dsh_observe` — compatibility alias around `dsh_wait`; bridge cursors replace raw session seq cursors
 - `dsh_cancel` — `scope="turn"|"queue"`
-- `dsh_list` — task mappings enriched with current derived status
+- `dsh_list` — compact task summaries with optional detail categories
 - `dsh_answer_question` — typed answer for a pending question rpcId
 - `dsh_resolve_approval` — typed `allow_once|reject` response for a pending approval rpcId
 - `dsh_release_workspace` — explicitly release a persistent bridge workspace claim without closing the DSH session
@@ -163,6 +181,8 @@ These are planned directions, not implemented capabilities or release commitment
 
 ## More documentation
 
+- [0.2.0 release notes](docs/release-0.2.0.zh-CN.md) — compact supervision, caller attribution, DSH companion, and API price comparison boundaries
+- [Changelog](CHANGELOG.md) — release history for the caller bridge and companion package
 - [Architecture and safety model](docs/architecture.md) — identity, state, recovery, approvals, cancellation, and workspace coordination
 - [Multi-caller extension architecture](docs/caller-integration-architecture.md) — shared Runtime and Integration Pack boundaries for Codex, Claude Code, and future callers
 - [Plugin-aware routing requirements](docs/plugin-aware-routing-requirements.md) — product goals, safety boundaries, acceptance criteria, and deferred scope for choosing user-configured DSH Harness presets
@@ -176,4 +196,4 @@ These are planned directions, not implemented capabilities or release commitment
 
 [MIT](LICENSE)
 
-Alpha note: DSH is still in developer preview and this community project is independent of DeepSeek and OpenAI. `0.1.0-alpha.1` contains a shared-ledger concurrency bug; it is fixed in `0.1.0-alpha.2`. Read [Known issues](KNOWN_ISSUES.md) before upgrading or running concurrent bridge processes.
+Release note: DSH is still in developer preview and this community project is independent of DeepSeek and OpenAI. The shared-ledger issue from `0.1.0-alpha.1` is addressed in the `0.2.0` release line. Read [Known issues](KNOWN_ISSUES.md) before upgrading or running concurrent bridge processes.

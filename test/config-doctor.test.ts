@@ -53,10 +53,25 @@ test("doctor separates CLI and host product versions and capability-probes witho
   const api = new FakeDshApi();
   api.description = { version: "0.0.1", cwd: "/tmp", attachedSessions: 0, canOpenPath: true };
   const config = loadConfig({ DSH_HOME: "/tmp/dsh-test-home", DSH_BRIDGE_TIME_ZONE: "UTC" });
-  const report = await runDoctor(config, api, async () => "0.1.0-rc.6");
+  const report = await runDoctor(config, api, async () => "0.1.2-rc.1");
 
   assert.equal(report.ok, true);
-  assert.equal(report.dshCliVersion, "0.1.0-rc.6");
+  assert.equal(report.dshCliVersion, "0.1.2-rc.1");
+  assert.equal(report.hostDescribeProductVersion, "0.0.1");
+  assert.equal(report.compatibility, "tested");
+  assert.equal(report.capabilities.eventsMuxWebSocket, true);
+  assert.equal(report.capabilities.muxResumeSince, false);
+  assert.equal(api.calls.some((call) => call.method === "session.create" || call.method === "session.prompt"), false);
+});
+
+test("doctor recognizes the latest DSH 0.1.5-rc.1 target without writes", async () => {
+  const api = new FakeDshApi();
+  api.description = { version: "0.0.1", cwd: "/tmp", attachedSessions: 0, canOpenPath: true };
+  const config = loadConfig({ DSH_HOME: "/tmp/dsh-test-home", DSH_BRIDGE_TIME_ZONE: "UTC" });
+  const report = await runDoctor(config, api, async () => "0.1.5-rc.1");
+
+  assert.equal(report.ok, true);
+  assert.equal(report.dshCliVersion, "0.1.5-rc.1");
   assert.equal(report.hostDescribeProductVersion, "0.0.1");
   assert.equal(report.compatibility, "tested");
   assert.equal(report.capabilities.eventsMuxWebSocket, true);
@@ -198,7 +213,7 @@ test("doctor includes content-free lock diagnostics on both success and Host fai
 
     const successApi = new FakeDshApi();
     successApi.description = { version: "0.0.1", cwd: "/tmp", attachedSessions: 0, canOpenPath: true };
-    const success = await runDoctor(configFor(homeDir), successApi, async () => "0.1.0-rc.6");
+    const success = await runDoctor(configFor(homeDir), successApi, async () => "0.1.2-rc.1");
     assert.equal(success.ok, true);
     assert.equal(success.lockDiagnostics.locks[0].ownerPresence, "present");
     assert.equal(JSON.stringify(success).includes(token), false);

@@ -19,7 +19,7 @@ import {
 } from "./codex-integration.js";
 import type { InstallPlan, UpsertMcpServerOperation } from "./caller-integration.js";
 import { loadConfig } from "./config.js";
-import { DshClient } from "./dsh-client.js";
+import { createDshClient } from "./client-factory.js";
 import { probeDshCliVersion, runDoctor } from "./doctor.js";
 import { atomicInstallText, readConfigSnapshot } from "./setup-engine.js";
 import type { ConfigSnapshot } from "./setup-engine.js";
@@ -298,12 +298,13 @@ async function main(): Promise<void> {
 
   if (!options.skipDoctor) {
     const config = loadConfig({
+      ...process.env,
       DSH_HOST_URL: hostUrl,
       DSH_HOST_VERSION: dshVersion,
       DSH_BRIDGE_TIME_ZONE: Intl.DateTimeFormat().resolvedOptions().timeZone,
       ...(preset === undefined ? {} : { DSH_BRIDGE_AGENT_PRESET: preset }),
     });
-    const report = await runDoctor(config, new DshClient(config.hostUrl, config.requestTimeoutMs), async () => dshVersion);
+    const report = await runDoctor(config, createDshClient(config), async () => dshVersion);
     if (report.ok) console.log(`Host check: ${report.compatibility}`);
     else console.log(`Host check: not connected; start it with ${report.startCommand}`);
   }

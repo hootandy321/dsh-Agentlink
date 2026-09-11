@@ -160,7 +160,7 @@ export const dshAgentPresetListValueSchema = z
         .passthrough(),
     ),
     authorable: z.boolean(),
-    hasDocument: z.boolean(),
+    hasDocument: z.boolean().optional(),
   })
   .passthrough();
 
@@ -461,6 +461,8 @@ export type DshSubagentAddress = {
 };
 
 export interface DshApi {
+  companion?(method: string, input: Record<string, unknown>, signal?: AbortSignal): Promise<Record<string, unknown>>;
+  trackSessions?(sessions: Array<{ sessionId: string; parentSessionId?: string; mode?: "one-shot" | "continuable" }>): void;
   hostDescribe(signal?: AbortSignal): Promise<DshUnaryResult<DshHostDescription>>;
   sessionList(signal?: AbortSignal): Promise<DshUnaryResult<z.infer<typeof dshSessionListValueSchema>>>;
   sessionCreate(

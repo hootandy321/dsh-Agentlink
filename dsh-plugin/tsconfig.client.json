@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "None",
+    "moduleResolution": "Classic",
+    "moduleDetection": "legacy"
+  },
+  "include": [
+    "src/client.ts"
+  ]
+}

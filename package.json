@@ -1,6 +1,6 @@
 {
   "name": "dsh-agentlink",
-  "version": "0.1.0-alpha.2",
+  "version": "0.2.0",
   "private": true,
   "description": "Caller-side bridge from agent frameworks to the official DeepSeek Harness Web Host.",
   "license": "MIT",
@@ -31,6 +31,7 @@
     "skill/",
     "README.md",
     "README.zh-CN.md",
+    "CHANGELOG.md",
     "CONTRIBUTING.md",
     "SECURITY.md",
     "KNOWN_ISSUES.md",
@@ -57,13 +58,13 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.5",
+    "ws": "^8.21.3",
     "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@types/ws": "^8.18.1",
     "tsx": "^4.20.3",
-    "typescript": "^5.8.3",
-    "ws": "^8.18.3"
+    "typescript": "^5.8.3"
   }
 }

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import { BridgeAttributionStore } from "../src/bridge-attribution.js";
 import { BridgeCapabilityError, BridgeService, DelegationSetupError, StaleViewError } from "../src/bridge-service.js";
 import type { BridgeConfig } from "../src/config.js";
 import { DshRpcError } from "../src/dsh-client.js";
@@ -30,10 +31,20 @@ test("delegate validates cwd, never passes model, stays detached, and followup p
     const connection = new FakeConnection(ledger);
     const service = new BridgeService(config(home), api, tasks, connection, ledger);
 
-    const delegated = await service.delegate({ prompt: "Implement this", cwd: home });
+    const delegated = await service.delegate({
+      prompt: "Implement this",
+      cwd: home,
+      caller: { client: "codex", model: { provider: "openai", id: "gpt-6-astra", source: "caller-reported" } },
+    });
     assert.equal(delegated.accepted, true);
     assert.equal(delegated.detached, true);
     assert.equal(delegated.rootSessionId, "root-session");
+    assert.equal(typeof delegated.runId, "string");
+    assert.equal(delegated.submissionId, "remote-submission-1");
+    assert.deepEqual(delegated.caller, {
+      client: "codex",
+      model: { provider: "openai", id: "gpt-6-astra", serviceTier: "standard", source: "caller-reported" },
+    });
     assert.deepEqual(delegated.workspaceClaimSemantics, {
       enforcement: "bridge-cooperative-only",
       controlsDshSandbox: false,
@@ -45,12 +56,20 @@ test("delegate validates cwd, never passes model, stays detached, and followup p
     assert.deepEqual(create?.payload, { cwd: await realpath(home) });
     assert.equal("model" in (create?.payload as Record<string, unknown>), false);
     assert.equal("model" in (prompt?.payload as Record<string, unknown>), false);
+    assert.ok(api.calls.findIndex((call) => call.method === "agentlink.registerInvocation") < api.calls.findIndex((call) => call.method === "session.prompt"));
 
-    await service.continueTask(delegated.taskId, "later", "queue");
+    await service.continueTask(delegated.taskId, "later", "queue", {}, {
+      client: "codex",
+      model: { provider: "openai", id: "gpt-5.6-sol", source: "caller-reported" },
+    });
     await service.continueTask(delegated.taskId, "now", "steer");
     const followups = api.calls.filter((call) => call.method === "session.prompt").slice(1);
     assert.deepEqual(followups.map((call) => (call.payload as { mode: string }).mode), ["queue", "steer"]);
     assert.deepEqual(followups.map((call) => (call.payload as { sessionId: string }).sessionId), ["root-session", "root-session"]);
+    const submissions = api.calls.filter((call) => call.method === "agentlink.registerSubmission");
+    assert.equal(((submissions[0]?.payload as Record<string, any>).caller.model as Record<string, unknown>).id, "gpt-5.6-sol");
+    assert.equal(((submissions[0]?.payload as Record<string, any>).caller.model as Record<string, unknown>).serviceTier, "standard");
+    assert.equal(((submissions[1]?.payload as Record<string, any>).caller.model as Record<string, unknown>).source, "unknown");
 
     const released = await service.releaseWorkspace(delegated.taskId);
     assert.equal(released.sessionClosedByRelease, false);
@@ -63,6 +82,100 @@ test("delegate validates cwd, never passes model, stays detached, and followup p
     const beforeInvalid = api.calls.length;
     await assert.rejects(() => service.delegate({ prompt: "bad", cwd: join(home, "missing") }), /cwd does not exist/);
     assert.equal(api.calls.length, beforeInvalid);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+
+test("legacy task mappings recover existing run attribution without creating an active historical submission", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-dsh-service-"));
+  try {
+    const api = new FakeDshApi();
+    api.companionSummaries.set("legacy-root", {
+      runId: "run-existing",
+      caller: {
+        client: "codex",
+        model: { provider: "openai", id: "gpt-6-astra", serviceTier: "standard", source: "caller-reported" },
+      },
+    });
+    const tasks = new TaskStore(home);
+    const task = await tasks.create("legacy-root");
+    await new WorkspaceClaimStore(home).acquire({
+      canonicalCwd: home,
+      taskId: task.taskId,
+      sessionId: task.sessionId,
+      mode: "exclusive-write",
+    });
+    const ledger = new EventLedger(home);
+    const connection = new FakeConnection(ledger);
+    connection.lineage = [
+      { sessionId: "legacy-root", found: true, origin: "root", running: false, blank: false, historyCapability: "session.history" },
+    ];
+    const service = new BridgeService(config(home), api, tasks, connection, ledger);
+
+    const sync = await service.syncAttribution();
+    assert.deepEqual(sync, { scanned: 1, registered: 1, skipped: 0, warnings: [] });
+    const historicalRegistration = api.calls.find((call) => call.method === "agentlink.registerInvocation");
+    assert.equal((historicalRegistration?.payload as Record<string, unknown>).runId, "run-existing");
+    assert.equal((historicalRegistration?.payload as Record<string, unknown>).historical, true);
+    assert.equal((historicalRegistration?.payload as Record<string, unknown>).closeMode, "turn-end");
+
+    const status = await service.status(task.taskId);
+    assert.equal(status.runId, "run-existing");
+    const listed = await service.listTasks();
+    assert.equal(listed[0]?.runId, "run-existing");
+    let attribution = await new BridgeAttributionStore(home).snapshot();
+    assert.equal(attribution.invocations[0]?.runId, "run-existing");
+    assert.equal(attribution.invocations[0]?.historical, true);
+    assert.equal(attribution.submissions.length, 0);
+    assert.equal(api.calls.filter((call) => call.method === "agentlink.registerInvocation").length, 1);
+    assert.equal(api.calls.some((call) => call.method === "agentlink.closeSubmission"), false);
+
+    await service.continueTask(task.taskId, "continue legacy", "queue");
+    const submission = api.calls.find((call) => call.method === "agentlink.registerSubmission");
+    assert.equal((submission?.payload as Record<string, unknown>).runId, "run-existing");
+    attribution = await new BridgeAttributionStore(home).snapshot();
+    assert.equal(attribution.submissions[0]?.runId, "run-existing");
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("attribution metadata failures do not block prompting and registered prompt failures close submissions", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-dsh-service-"));
+  try {
+    const api = new FakeDshApi();
+    api.companionErrors.set("registerInvocation", new Error("companion down"));
+    const tasks = new TaskStore(home);
+    const ledger = new EventLedger(home);
+    const service = new BridgeService(config(home), api, tasks, new FakeConnection(ledger), ledger);
+
+    const delegated = await service.delegate({ prompt: "work", cwd: home });
+    assert.equal(delegated.accepted, true);
+    assert.equal(typeof delegated.runId, "string");
+    assert.match(delegated.coordinationWarning ?? "", /companion invocation registration failed/i);
+    assert.equal(api.calls.some((call) => call.method === "session.prompt"), true);
+
+    const failingHome = await mkdtemp(join(tmpdir(), "codex-dsh-service-fail-"));
+    try {
+      const failingApi = new FakeDshApi();
+      failingApi.sessionPrompt = async () => {
+        throw new Error("prompt rejected");
+      };
+      const failingLedger = new EventLedger(failingHome);
+      const failingService = new BridgeService(
+        config(failingHome),
+        failingApi,
+        new TaskStore(failingHome),
+        new FakeConnection(failingLedger),
+        failingLedger,
+      );
+      await assert.rejects(() => failingService.delegate({ prompt: "fail", cwd: failingHome }), /initial prompt was not accepted/);
+      assert.equal(failingApi.calls.some((call) => call.method === "agentlink.closeSubmission"), true);
+    } finally {
+      await rm(failingHome, { recursive: true, force: true });
+    }
   } finally {
     await rm(home, { recursive: true, force: true });
   }
@@ -337,9 +450,29 @@ test("wait is bounded and tail returns task cursors plus current pending snapsho
     assert.equal(waited.nextCursor, 0);
     await assert.rejects(() => service.wait(task.taskId, 31), /between 0 and 30/);
 
+    await ledger.append(task.taskId, {
+      sourceSessionId: "root-session",
+      sourceSeq: 0,
+      origin: "root",
+      type: "session/event",
+      raw: {
+        type: "session/event",
+        sessionId: "root-session",
+        event: { type: "user/message", seq: 0, time: 1, data: { content: [{ type: "text", text: "ordinary progress" }] } },
+      },
+    });
+    const attentionWait = await service.wait(task.taskId, 0, 0);
+    assert.equal(attentionWait.timedOut, true);
+    assert.equal(attentionWait.reason, "timeout");
+    assert.equal(attentionWait.nextCursor, 1);
+    const activityWait = await service.wait(task.taskId, 0, 0, "activity");
+    assert.equal(activityWait.timedOut, false);
+    assert.equal(activityWait.reason, "activity");
+    assert.equal(activityWait.nextCursor, 1);
+
     const tailed = await service.tail(task.taskId, 0, 10, 10_000);
     assert.deepEqual(tailed.events, []);
-    assert.equal(tailed.nextCursor, 0);
+    assert.equal(tailed.nextCursor, 1);
     assert.equal(tailed.delivery.startsWith("at-least-once"), true);
   } finally {
     await rm(home, { recursive: true, force: true });
@@ -462,6 +595,180 @@ test("status and tail hydrate conversation content from live DSH history without
     const offlineTail = await service.tail(task.taskId, 0, 10, 10_000);
     assert.notEqual(offlineTail.contentUnavailable, false);
     assert.equal(offlineTail.events.some((event) => JSON.stringify(event.digest).includes("live final only")), false);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("listTasks returns lightweight summaries without resolving final message bodies", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-dsh-service-"));
+  try {
+    const api = new FakeDshApi();
+    const tasks = new TaskStore(home);
+    const task = await tasks.create("root-session");
+    const ledger = new EventLedger(home);
+    await ledger.append(task.taskId, {
+      sourceSessionId: "root-session",
+      sourceSeq: 0,
+      origin: "root",
+      type: "session/event",
+      raw: {
+        type: "session/event",
+        sessionId: "root-session",
+        event: { type: "turn/start", seq: 0, time: 1, data: { turn: 1 } },
+      },
+    });
+    await ledger.append(task.taskId, {
+      sourceSessionId: "root-session",
+      sourceSeq: 1,
+      origin: "root",
+      type: "session/event",
+      raw: {
+        type: "session/event",
+        sessionId: "root-session",
+        event: { type: "assistant/message", seq: 1, time: 2, data: { message: { content: [{ type: "text", text: "hidden" }] } } },
+      },
+    });
+    await ledger.append(task.taskId, {
+      sourceSessionId: "root-session",
+      sourceSeq: 2,
+      origin: "root",
+      type: "session/event",
+      raw: {
+        type: "session/event",
+        sessionId: "root-session",
+        event: { type: "turn/end", seq: 2, time: 3, data: { turn: 1, reason: { kind: "completed" } } },
+      },
+    });
+    const connection = new FakeConnection(ledger);
+    connection.lineage = [
+      { sessionId: "root-session", found: true, origin: "root", running: false, blank: false, historyCapability: "session.history" },
+    ];
+    const service = new BridgeService(config(home), api, tasks, connection, ledger);
+
+    const [summary] = await service.listTasks();
+
+    assert.equal(summary.taskId, task.taskId);
+    assert.equal(summary.availability, "connected");
+    assert.equal(summary.finalMessage, null);
+    assert.equal(summary.finalMessageStatus, "pointer_available");
+    assert.equal(api.calls.some((call) => call.method === "session.history"), false);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("listTasks reports a deleted root session as session_not_found while the Host stays connected", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-dsh-service-"));
+  try {
+    const api = new FakeDshApi();
+    const tasks = new TaskStore(home);
+    const task = await tasks.create("root-session");
+    const ledger = new EventLedger(home);
+    await ledger.append(task.taskId, {
+      sourceSessionId: "root-session",
+      sourceSeq: 0,
+      origin: "root",
+      type: "session/event",
+      raw: {
+        type: "session/event",
+        sessionId: "root-session",
+        event: { type: "turn/start", seq: 0, time: 1, data: { turn: 1 } },
+      },
+    });
+    const connection = new FakeConnection(ledger);
+    connection.pending = [
+      {
+        type: "server-request",
+        rpcId: "stale-question",
+        method: "question/requested",
+        payload: {
+          type: "question/requested",
+          sessionId: "root-session",
+          questions: [{ id: "q", question: "stale" }],
+        },
+      },
+    ];
+    connection.queue = {
+      known: true,
+      stale: false,
+      connectionEpoch: 1,
+      items: [{ id: "stale-item", placement: "queued", message: { role: "user", content: [] } }],
+    };
+    connection.lineage = [
+      { sessionId: "root-session", found: false, origin: "root", historyCapability: "session.history" },
+    ];
+    const service = new BridgeService(config(home), api, tasks, connection, ledger);
+
+    const [summary] = await service.listTasks();
+
+    assert.equal(summary.availability, "session_not_found");
+    assert.equal(summary.status, "unknown");
+    assert.deepEqual(summary.pendingInteractions, []);
+    assert.deepEqual(summary.queueDepth, {
+      known: false,
+      stale: false,
+      nextTurn: 0,
+      nextStep: 0,
+      steering: 0,
+      context: 0,
+      total: 0,
+    });
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("wait advances the blocking cursor/revision after ignored non-attention changes", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-dsh-service-"));
+  try {
+    const api = new FakeDshApi();
+    api.sessions = [{ sessionId: "root-session", updatedAt: 2, running: true, blank: false }];
+    const tasks = new TaskStore(home);
+    const task = await tasks.create("root-session");
+    const ledger = new EventLedger(home);
+    const connection = new FakeConnection(ledger);
+    connection.lineage = [
+      { sessionId: "root-session", found: true, origin: "root", running: true, blank: false, historyCapability: "session.history" },
+    ];
+    const service = new BridgeService(config(home), api, tasks, connection, ledger);
+
+    const waits: Array<{ afterCursor: number; afterRevision: number }> = [];
+    let calls = 0;
+    connection.waitForTaskChange = async (taskId, afterCursor, afterRevision, waitMs) => {
+      calls += 1;
+      waits.push({ afterCursor, afterRevision });
+      if (calls === 1) {
+        // Ordinary progress: the ledger advances past the baseline without an
+        // attention-worthy event; the mux-driven connection state change also
+        // bumps the connection revision, like the real runtime would.
+        await ledger.append(task.taskId, {
+          sourceSessionId: "root-session",
+          origin: "root",
+          type: "session/event",
+          raw: {
+            type: "session/event",
+            sessionId: "root-session",
+            event: { type: "tool/call", seq: 0, time: 1, data: { name: "read" } },
+          },
+        });
+        connection.state = { ...connection.state, revision: connection.state.revision + 1 };
+        return { timedOut: false, connection: connection.snapshot(), ledger: await ledger.snapshot(taskId) };
+      }
+      return { timedOut: true, connection: connection.snapshot(), ledger: await ledger.snapshot(taskId) };
+    };
+
+    const initialCursor = (await ledger.snapshot(task.taskId)).cursor;
+    const result = await service.wait(task.taskId, 2, undefined, "attention");
+
+    assert.equal(result.timedOut, true);
+    assert.equal(result.reason, "timeout");
+    assert.equal(calls, 2);
+    assert.deepEqual(waits[0], { afterCursor: initialCursor, afterRevision: 1 });
+    // After the ignored change the blocking baseline moved to the observed
+    // status cursor/revision instead of reusing the original values.
+    assert.equal(waits[1]!.afterCursor > waits[0]!.afterCursor, true);
+    assert.equal(waits[1]!.afterRevision > waits[0]!.afterRevision, true);
   } finally {
     await rm(home, { recursive: true, force: true });
   }

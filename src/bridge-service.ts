@@ -1,6 +1,7 @@
 import { realpath, stat } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 
+import { BridgeAttributionStore, type CallerInfo, type CallerModelSource, type InvocationRecord } from "./bridge-attribution.js";
 import type { BridgeConfig } from "./config.js";
 import type { DshConnection, HostConnectionSnapshot, QueueSnapshot, TaskLineageSession } from "./connection-manager.js";
 import { DshRpcError, DshTransportError, formatModel } from "./dsh-client.js";
@@ -13,6 +14,7 @@ import type {
 } from "./event-ledger.js";
 import { getDshUnaryMetadata } from "./dsh-types.js";
 import type { DshApi, DshHistoryEntry, DshQuestionAnswer } from "./dsh-types.js";
+import type { TailKind } from "./response-view.js";
 import type { TaskRecord, TaskRouteRecord } from "./task-store.js";
 import { TaskStore } from "./task-store.js";
 import type { WorkspaceClaimMode } from "./workspace-claim.js";
@@ -21,16 +23,33 @@ import { WorkspaceClaimConflictError, WorkspaceClaimStore } from "./workspace-cl
 export interface DelegateInput {
   prompt: string;
   cwd: string;
+  runId?: string | undefined;
+  caller?: CallerInput | undefined;
   agentPreset?: string;
   title?: string;
   waitSeconds?: number;
   workspaceMode?: WorkspaceClaimMode;
 }
 
+export interface CallerModelInput {
+  provider: string;
+  id: string;
+  serviceTier?: string | undefined;
+  source?: CallerModelSource | undefined;
+}
+
+export interface CallerInput {
+  client?: string | undefined;
+  conversationId?: string | undefined;
+  model?: CallerModelInput | undefined;
+}
+
 export interface WritePreconditions {
   sinceCursor?: number;
   expectedRevision?: number;
 }
+
+export type WaitWakeOn = "attention" | "activity";
 
 export type TaskAvailability = "connected" | "host_unreachable" | "session_not_found";
 
@@ -113,6 +132,59 @@ function asObject(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
+function normalizeCaller(caller?: CallerInput): CallerInfo {
+  const client = caller?.client?.trim() || "codex";
+  return {
+    client,
+    ...(caller?.conversationId === undefined ? {} : { conversationId: caller.conversationId }),
+    model:
+      caller?.model === undefined
+        ? { provider: "unknown", id: "unknown", source: "unknown" }
+        : {
+            provider: caller.model.provider,
+            id: caller.model.id,
+            serviceTier: caller.model.serviceTier ?? "standard",
+            source: caller.model.source ?? "caller-reported",
+          },
+  };
+}
+
+function callerFromCompanion(value: unknown): CallerInfo | undefined {
+  const caller = asObject(value);
+  if (caller === undefined || typeof caller.client !== "string" || caller.client.trim() === "") return undefined;
+  const model = asObject(caller.model);
+  let source: CallerModelSource = "unknown";
+  if (
+    model?.source === "caller-reported" ||
+    model?.source === "adapter" ||
+    model?.source === "user-config" ||
+    model?.source === "unknown"
+  ) {
+    source = model.source;
+  } else if (model?.source === "configured") {
+    source = "user-config";
+  }
+  return {
+    client: caller.client.trim(),
+    ...(typeof caller.conversationId === "string" ? { conversationId: caller.conversationId } : {}),
+    ...(typeof model?.provider === "string" && typeof model.id === "string"
+      ? {
+          model: {
+            provider: model.provider,
+            id: model.id,
+            ...(typeof model.serviceTier === "string" ? { serviceTier: model.serviceTier } : {}),
+            source,
+          },
+        }
+      : { model: { provider: "unknown", id: "unknown", source: "unknown" } }),
+  };
+}
+
+function warningJoin(...warnings: Array<string | undefined>): string | undefined {
+  const present = warnings.filter((warning): warning is string => warning !== undefined && warning.length > 0);
+  return present.length === 0 ? undefined : present.join("; ");
+}
+
 function contentText(value: unknown): string | undefined {
   const content = asObject(value)?.content;
   if (!Array.isArray(content)) return undefined;
@@ -174,6 +246,61 @@ function isTerminal(execution: LedgerExecution): boolean {
   return execution === "turn_completed" || execution === "failed" || execution === "canceled" || execution === "interrupted";
 }
 
+function waitAttentionReason(status: Record<string, any>, cursor: number, explicitCursor: boolean): string | undefined {
+  if (status.availability !== "connected") return status.availability;
+  if (status.recovery?.state === "unrecoverable_gap") return "unrecoverable_gap";
+  if (Array.isArray(status.pendingInteractions) && status.pendingInteractions.length > 0) return "pending_interaction";
+  if (isTerminal(status.execution) && (status.cursor > cursor || !explicitCursor)) return status.execution;
+  return undefined;
+}
+
+function tailEventType(record: TailDigestRecord): string {
+  const digest = record.digest;
+  if (typeof digest === "object" && digest !== null) {
+    const digestObject = digest as Record<string, unknown>;
+    const type = digestObject.type;
+    if (typeof type === "string") return type;
+    const eventType = digestObject.eventType;
+    if (typeof eventType === "string") return eventType;
+    const coordination = digestObject.coordination;
+    if (typeof coordination === "object" && coordination !== null) {
+      const eventType = (coordination as Record<string, unknown>).eventType;
+      if (typeof eventType === "string") return eventType;
+      const nested = (coordination as Record<string, unknown>).coordination;
+      if (typeof nested === "object" && nested !== null) {
+        const nestedEventType = (nested as Record<string, unknown>).eventType;
+        if (typeof nestedEventType === "string") return nestedEventType;
+      }
+    }
+  }
+  return record.type;
+}
+
+function tailMatches(record: TailDigestRecord, kinds: TailKind[]): boolean {
+  const kindSet = new Set(kinds);
+  if (kindSet.has("all")) return true;
+  const type = tailEventType(record);
+  if (kindSet.has("message") && type.endsWith("/message")) return true;
+  if (kindSet.has("final") && type === "assistant/message") return true;
+  if (kindSet.has("turn") && type.startsWith("turn/")) return true;
+  if (
+    kindSet.has("interaction") &&
+    (type.startsWith("question/") || type.startsWith("approval/") || type.startsWith("interaction/"))
+  ) {
+    return true;
+  }
+  if (kindSet.has("bridge") && type.startsWith("bridge/")) return true;
+  if (kindSet.has("queue") && type === "session/queue") return true;
+  if (kindSet.has("jobs") && type === "session/jobs") return true;
+  if (kindSet.has("error") && (type.endsWith("/error") || type === "stream/error")) return true;
+  if (kindSet.has("attention")) {
+    if (type === "assistant/message" || type === "turn/end" || type === "stream/error") return true;
+    if (type.startsWith("question/") || type.startsWith("approval/") || type.startsWith("interaction/")) return true;
+    return type === "bridge/turn-interrupted";
+  }
+  return false;
+}
+
 function queueDepth(snapshot: QueueSnapshot) {
   const nextTurn = snapshot.items.filter((item) => item.placement === "queued").length;
   const steering = snapshot.items.filter((item) => item.placement === "steering").length;
@@ -208,6 +335,7 @@ function statusShape(
   pending: ReturnType<DshConnection["pendingForTask"]>,
   queue: QueueSnapshot,
   workspaceClaim: Awaited<ReturnType<WorkspaceClaimStore["get"]>>,
+  attribution?: InvocationRecord | undefined,
 ) {
   const coordinationFailure =
     task.route?.launchStage === "launch-failed"
@@ -220,6 +348,7 @@ function statusShape(
   return {
     taskId: task.taskId,
     rootSessionId: task.sessionId,
+    ...(attribution?.runId === undefined ? {} : { runId: attribution.runId }),
     availability,
     execution,
     status: availability === "connected" ? execution : "unknown",
@@ -264,7 +393,166 @@ export class BridgeService {
     private readonly connection: DshConnection,
     private readonly ledger: EventLedger,
     private readonly claims: WorkspaceClaimStore = new WorkspaceClaimStore(config.homeDir),
+    private readonly attribution: BridgeAttributionStore = new BridgeAttributionStore(config.homeDir),
   ) {}
+
+  private async companion(method: string, input: Record<string, unknown>): Promise<Record<string, unknown> | undefined> {
+    if (this.api.companion === undefined) return undefined;
+    return this.api.companion(method, input);
+  }
+
+  private async registerInvocationMetadata(input: {
+    runId?: string | undefined;
+    taskId: string;
+    rootSessionId: string;
+    caller?: CallerInput | undefined;
+    title?: string | undefined;
+    cwd?: string | undefined;
+  }): Promise<{ runId: string; submissionId: string; caller: CallerInfo; warning: string | undefined }> {
+    const caller = normalizeCaller(input.caller);
+    const runId = input.runId?.trim() || this.attribution.generateRunId();
+    const payload = {
+      runId,
+      taskId: input.taskId,
+      rootSessionId: input.rootSessionId,
+      caller,
+      ...(input.title === undefined ? {} : { title: input.title }),
+      ...(input.cwd === undefined ? {} : { cwd: input.cwd }),
+    };
+    let remoteSubmissionId: string | undefined;
+    let warning: string | undefined;
+    try {
+      const registered = await this.companion("registerInvocation", payload);
+      remoteSubmissionId = typeof registered?.submissionId === "string" ? registered.submissionId : undefined;
+    } catch (error) {
+      warning = `Agentlink companion invocation registration failed; local attribution was kept: ${String(error)}`;
+    }
+    try {
+      const local = await this.attribution.registerInvocation({
+        ...payload,
+        ...(remoteSubmissionId === undefined ? {} : { submissionId: remoteSubmissionId }),
+      });
+      return { runId, submissionId: local.submission.submissionId, caller, warning };
+    } catch (error) {
+      return {
+        runId,
+        submissionId: remoteSubmissionId ?? this.attribution.generateSubmissionId(),
+        caller,
+        warning: warningJoin(warning, `local attribution registration failed: ${String(error)}`),
+      };
+    }
+  }
+
+  private async ensureHistoricalAttribution(task: TaskRecord): Promise<void> {
+    if ((await this.attribution.task(task.taskId)) !== undefined) return;
+    let runId: string | undefined;
+    let caller = normalizeCaller(undefined);
+    try {
+      const summary = await this.companion("summary", { sessionId: task.sessionId });
+      runId = typeof summary?.runId === "string" ? summary.runId : undefined;
+      caller = callerFromCompanion(summary?.caller) ?? caller;
+    } catch {
+      // Historical attribution is best-effort migration metadata. Read tools must not fail because the companion is absent or stale.
+    }
+    await this.attribution.registerHistoricalInvocation({
+      taskId: task.taskId,
+      rootSessionId: task.sessionId,
+      caller,
+      ...(runId === undefined ? {} : { runId }),
+    });
+  }
+
+  private async registerSubmissionMetadata(input: {
+    taskId: string;
+    rootSessionId: string;
+    caller?: CallerInput | undefined;
+  }): Promise<{ runId: string; submissionId: string; caller: CallerInfo; warning: string | undefined }> {
+    let existing = await this.attribution.task(input.taskId);
+    if (existing === undefined) {
+      await this.ensureHistoricalAttribution({ taskId: input.taskId, sessionId: input.rootSessionId });
+      existing = await this.attribution.task(input.taskId);
+    }
+    if (existing === undefined) {
+      return this.registerInvocationMetadata({
+        taskId: input.taskId,
+        rootSessionId: input.rootSessionId,
+        ...(input.caller === undefined ? {} : { caller: input.caller }),
+      });
+    }
+    const caller = normalizeCaller(input.caller);
+    const payload = {
+      runId: existing.runId,
+      taskId: input.taskId,
+      sessionId: input.rootSessionId,
+      caller,
+    };
+    let remoteSubmissionId: string | undefined;
+    let warning: string | undefined;
+    try {
+      const registered = await this.companion("registerSubmission", payload);
+      remoteSubmissionId = typeof registered?.submissionId === "string" ? registered.submissionId : undefined;
+    } catch (error) {
+      warning = `Agentlink companion submission registration failed; local attribution was kept: ${String(error)}`;
+    }
+    try {
+      const local = await this.attribution.registerSubmission({
+        ...payload,
+        ...(remoteSubmissionId === undefined ? {} : { submissionId: remoteSubmissionId }),
+      });
+      return { runId: existing.runId, submissionId: local.submissionId, caller, warning };
+    } catch (error) {
+      return {
+        runId: existing.runId,
+        submissionId: remoteSubmissionId ?? this.attribution.generateSubmissionId(),
+        caller,
+        warning: warningJoin(warning, `local attribution registration failed: ${String(error)}`),
+      };
+    }
+  }
+
+  private async closeSubmissionMetadata(
+    submissionId: string,
+    status: "finished" | "cancelled" | "failed",
+  ): Promise<string | undefined> {
+    let warning: string | undefined;
+    try {
+      await this.companion("closeSubmission", { submissionId, status });
+    } catch (error) {
+      warning = `Agentlink companion submission close failed; local attribution was closed: ${String(error)}`;
+    }
+    try {
+      await this.attribution.closeSubmission(submissionId, status);
+    } catch (error) {
+      warning = warningJoin(warning, `local attribution close failed: ${String(error)}`);
+    }
+    return warning;
+  }
+
+  async costSummary(taskId: string): Promise<Record<string, unknown>> {
+    const task = await this.tasks.get(taskId);
+    const attribution = await this.attribution.task(taskId);
+    if (this.api.companion === undefined) {
+      return {
+        available: false,
+        reason: "companion_unavailable",
+        ...(attribution === undefined ? {} : { runId: attribution.runId, sessionId: task.sessionId }),
+      };
+    }
+    try {
+      const summary = await this.companion("summary", {
+        sessionId: task.sessionId,
+        ...(attribution?.runId === undefined ? {} : { runId: attribution.runId }),
+      });
+      return { available: true, summary };
+    } catch (error) {
+      return {
+        available: false,
+        reason: "companion_summary_failed",
+        message: error instanceof Error ? error.message : String(error),
+        ...(attribution === undefined ? {} : { runId: attribution.runId, sessionId: task.sessionId }),
+      };
+    }
+  }
 
   private async preflightWrite(taskId: string, preconditions: WritePreconditions = {}, requireWorkspaceClaim = false) {
     const task = await this.tasks.get(taskId);
@@ -441,6 +729,55 @@ export class BridgeService {
         exceededMaxBytes: true,
       };
     });
+  }
+
+  async syncAttribution(): Promise<{ scanned: number; registered: number; skipped: number; warnings: string[] }> {
+    const tasks = await this.tasks.list();
+    const warnings: string[] = [];
+    let registered = 0;
+    let skipped = 0;
+    for (const task of tasks) {
+      try {
+        let local = await this.attribution.task(task.taskId);
+        if (local === undefined) {
+          await this.ensureHistoricalAttribution(task);
+          local = await this.attribution.task(task.taskId);
+        }
+        if (local === undefined) {
+          skipped += 1;
+          warnings.push(`skipped ${task.taskId}: local attribution unavailable`);
+          continue;
+        }
+        if (local.rootSessionId !== task.sessionId) {
+          skipped += 1;
+          warnings.push(`skipped ${task.taskId}: attribution root session mismatch`);
+          continue;
+        }
+        if (local.historical !== true) {
+          skipped += 1;
+          continue;
+        }
+        if (this.api.companion === undefined) {
+          skipped += 1;
+          continue;
+        }
+        await this.companion("registerInvocation", {
+          runId: local.runId,
+          taskId: local.taskId,
+          rootSessionId: local.rootSessionId,
+          caller: local.caller,
+          ...(local.title === undefined ? {} : { title: local.title }),
+          ...(local.cwd === undefined ? {} : { cwd: local.cwd }),
+          historical: true,
+          closeMode: "turn-end",
+        });
+        registered += 1;
+      } catch (error) {
+        skipped += 1;
+        warnings.push(`sync ${task.taskId} failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    return { scanned: tasks.length, registered, skipped, warnings };
   }
 
   async hostStatus() {
@@ -694,6 +1031,14 @@ export class BridgeService {
     );
 
     const coordinationWarnings: string[] = [];
+    const attribution = await this.registerInvocationMetadata({
+      taskId: task.taskId,
+      rootSessionId: created.sessionId,
+      cwd,
+      ...(input.runId === undefined ? {} : { runId: input.runId }),
+      ...(input.caller === undefined ? {} : { caller: input.caller }),
+      ...(input.title === undefined ? {} : { title: input.title }),
+    });
     let promptIssuedRpcId: string | undefined;
     try {
       const promptReceipt = await this.api.sessionPrompt(promptPayload(this.config, created.sessionId, prompt, "queue"));
@@ -720,6 +1065,7 @@ export class BridgeService {
           );
         });
     } catch (error) {
+      await this.closeSubmissionMetadata(attribution.submissionId, "failed");
       if (promptIssuedRpcId === undefined) await failLaunch("prompt_not_accepted");
       throw new DelegationSetupError(
         "prompt",
@@ -739,6 +1085,9 @@ export class BridgeService {
     const base = {
       taskId: task.taskId,
       rootSessionId: task.sessionId,
+      runId: attribution.runId,
+      submissionId: attribution.submissionId,
+      caller: attribution.caller,
       accepted: true,
       detached: waitSeconds === 0,
       model: models.current,
@@ -751,7 +1100,7 @@ export class BridgeService {
       baseUrl: this.config.hostUrl,
       workspaceClaim,
       workspaceClaimSemantics: workspaceClaimSemantics(),
-      ...(coordinationWarnings.length === 0 ? {} : { coordinationWarning: coordinationWarnings.join("; ") }),
+      ...(warningJoin(attribution.warning, ...coordinationWarnings) === undefined ? {} : { coordinationWarning: warningJoin(attribution.warning, ...coordinationWarnings) }),
       ...(renameWarning === undefined ? {} : { warning: renameWarning }),
     };
     if (waitSeconds === 0) return base;
@@ -763,6 +1112,7 @@ export class BridgeService {
     prompt: string,
     mode: "queue" | "steer" = "queue",
     preconditions: WritePreconditions = {},
+    caller?: CallerInput,
   ) {
     const trimmed = prompt.trim();
     if (trimmed === "") throw new Error("prompt must not be empty");
@@ -776,7 +1126,18 @@ export class BridgeService {
         { taskId, rootSessionId: task.sessionId, current: models.current },
       );
     }
-    const receipt = await this.api.sessionPrompt(promptPayload(this.config, task.sessionId, trimmed, mode));
+    const attribution = await this.registerSubmissionMetadata({
+      taskId,
+      rootSessionId: task.sessionId,
+      ...(caller === undefined ? {} : { caller }),
+    });
+    let receipt;
+    try {
+      receipt = await this.api.sessionPrompt(promptPayload(this.config, task.sessionId, trimmed, mode));
+    } catch (error) {
+      await this.closeSubmissionMetadata(attribution.submissionId, "failed");
+      throw error;
+    }
     const issuedRpcId = getDshUnaryMetadata(receipt).issuedRpcId;
     let coordinationWarning: string | undefined;
     await this.ledger
@@ -792,6 +1153,9 @@ export class BridgeService {
     return {
       taskId,
       rootSessionId: task.sessionId,
+      runId: attribution.runId,
+      submissionId: attribution.submissionId,
+      caller: attribution.caller,
       mode,
       deliveryTarget: mode === "queue" ? "next-turn" : "next-step",
       durableWhenClaimedByDsh: true,
@@ -800,7 +1164,9 @@ export class BridgeService {
       issuedRpcId,
       accepted: receipt.accepted,
       ...(receipt.command === undefined ? {} : { command: receipt.command }),
-      ...(coordinationWarning === undefined ? {} : { coordinationWarning }),
+      ...(warningJoin(attribution.warning, coordinationWarning) === undefined
+        ? {}
+        : { coordinationWarning: warningJoin(attribution.warning, coordinationWarning) }),
       preflight: {
         cursor: view.ledger.cursor,
         connectionRevision: view.connection.revision,
@@ -811,6 +1177,8 @@ export class BridgeService {
 
   async status(taskId: string) {
     const task = await this.tasks.get(taskId);
+    await this.ensureHistoricalAttribution(task).catch(() => undefined);
+    const attribution = await this.attribution.task(taskId);
     const workspaceClaim = await this.claims.get(taskId);
     let ledger = await this.ledger.snapshot(taskId);
     let connection = this.connection.snapshot();
@@ -830,6 +1198,7 @@ export class BridgeService {
           [],
           queue,
           workspaceClaim,
+          attribution,
         ),
         lastKnownPendingInteractions: ledger.pendingInteractions,
       };
@@ -851,7 +1220,7 @@ export class BridgeService {
           items: [],
         };
         return {
-          ...statusShape(task, connection, ledger, lineage, "session_not_found", ledger.execution, [], missingQueue, workspaceClaim),
+          ...statusShape(task, connection, ledger, lineage, "session_not_found", ledger.execution, [], missingQueue, workspaceClaim, attribution),
           running: null,
           blank: null,
         };
@@ -887,7 +1256,7 @@ export class BridgeService {
         execution = ledger.execution;
       }
       const final = await this.resolveFinalMessage(taskId, ledger.finalMessagePointer);
-      return {
+      const result = {
         ...statusShape(
           task,
           connection,
@@ -898,6 +1267,7 @@ export class BridgeService {
           pending,
           this.connection.queueForSession(task.sessionId),
           workspaceClaim,
+          attribution,
         ),
         ...final,
         finalMessageStatus:
@@ -913,6 +1283,7 @@ export class BridgeService {
         model: models.current,
         routable: models.routable,
       };
+      return result;
     } catch (error) {
       if (error instanceof DshRpcError && error.code === "session-not-found") {
         const missingQueue: QueueSnapshot = {
@@ -922,7 +1293,7 @@ export class BridgeService {
           items: [],
         };
         return {
-          ...statusShape(task, connection, ledger, lineage, "session_not_found", ledger.execution, [], missingQueue, workspaceClaim),
+          ...statusShape(task, connection, ledger, lineage, "session_not_found", ledger.execution, [], missingQueue, workspaceClaim, attribution),
           running: null,
           blank: null,
         };
@@ -939,6 +1310,7 @@ export class BridgeService {
             [],
             queue,
             workspaceClaim,
+            attribution,
           ),
           lastKnownPendingInteractions: ledger.pendingInteractions,
         };
@@ -947,17 +1319,45 @@ export class BridgeService {
     }
   }
 
-  async tail(taskId: string, sinceCursor = 0, maxEvents = 50, maxBytes = 64_000) {
+  async tail(
+    taskId: string,
+    sinceCursor = 0,
+    maxEvents = 50,
+    maxBytes = 64_000,
+    kinds: TailKind[] = ["attention"],
+    sessionIds?: string[],
+  ) {
     const status = await this.status(taskId);
-    const tail = await this.ledger.tail(taskId, sinceCursor, maxEvents, maxBytes);
-    let events = tail.records;
+    let tail = await this.ledger.tail(taskId, sinceCursor, 500, 1_000_000);
+    const filtered: TailDigestRecord[] = [];
+    let scanCursor = sinceCursor;
+    let hasMore = tail.hasMore;
+    while (true) {
+      for (const record of tail.records) {
+        const sessionMatches = sessionIds === undefined || sessionIds.includes(record.sourceSessionId);
+        if (sessionMatches && tailMatches(record, kinds)) {
+          if (filtered.length >= maxEvents) {
+            hasMore = true;
+            break;
+          }
+          filtered.push(record);
+          scanCursor = record.cursor;
+          continue;
+        }
+        scanCursor = record.cursor;
+      }
+      if (filtered.length >= maxEvents || !tail.hasMore || tail.records.length === 0) break;
+      tail = await this.ledger.tail(taskId, scanCursor, 500, 1_000_000);
+      hasMore = tail.hasMore;
+    }
+    let events = filtered;
     let contentUnavailable: false | { reason: string; message?: string } =
       status.availability === "connected"
         ? false
         : { reason: status.availability };
     if (status.availability === "connected") {
       try {
-        events = await this.hydrateTail(taskId, tail.records);
+        events = await this.hydrateTail(taskId, filtered);
         events = this.boundTailContent(events, maxBytes);
       } catch (error) {
         contentUnavailable = {
@@ -969,9 +1369,10 @@ export class BridgeService {
     return {
       taskId,
       events,
-      nextCursor: tail.nextCursor,
+      nextCursor: scanCursor,
+      scanCursor,
       earliestCursor: tail.earliestCursor,
-      hasMore: tail.hasMore,
+      hasMore,
       contentTruncated: events.some((event) => event.exceededMaxBytes === true),
       status,
       pendingInteractions: status.pendingInteractions,
@@ -983,29 +1384,45 @@ export class BridgeService {
     };
   }
 
-  async wait(taskId: string, timeoutSec: number, sinceCursor?: number) {
+  async wait(taskId: string, timeoutSec: number, sinceCursor?: number, wakeOn: WaitWakeOn = "attention") {
     this.validateWaitSeconds(timeoutSec);
     const initial = await this.status(taskId);
     const cursor = sinceCursor ?? initial.cursor;
     if (cursor < initial.earliestCursor - 1) {
       await this.ledger.tail(taskId, cursor, 1, 1);
     }
-    if (
-      initial.cursor > cursor ||
-      initial.pendingInteractions.length > 0 ||
-      (initial.availability === "connected" && isTerminal(initial.execution))
-    ) {
-      return { timedOut: false, status: initial, nextCursor: initial.cursor };
+    const initialReason =
+      wakeOn === "activity" && initial.cursor > cursor
+        ? "activity"
+        : waitAttentionReason(initial, cursor, sinceCursor !== undefined);
+    if (initialReason !== undefined) {
+      return { timedOut: false, reason: initialReason, status: initial, nextCursor: initial.cursor };
     }
-    if (timeoutSec === 0) return { timedOut: true, status: initial, nextCursor: initial.cursor };
-    const change = await this.connection.waitForTaskChange(
-      taskId,
-      cursor,
-      initial.connection.revision,
-      timeoutSec * 1_000,
-    );
-    const status = await this.status(taskId);
-    return { timedOut: change.timedOut, status, nextCursor: status.cursor };
+    if (timeoutSec === 0) return { timedOut: true, reason: "timeout", status: initial, nextCursor: initial.cursor };
+    const deadline = Date.now() + timeoutSec * 1_000;
+    let status = initial;
+    // The attention/activity decision always compares against the caller's
+    // original baseline cursor. The blocking baseline is separate: after each
+    // ignored non-attention change the ledger cursor and connection revision
+    // are already newer, so reusing the original baseline would make every
+    // subsequent waitForTaskChange return immediately and turn the wait into a
+    // status()-RPC busy loop until an attention event or the deadline.
+    let waitCursor = cursor;
+    let waitRevision = initial.connection.revision;
+    while (true) {
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) return { timedOut: true, reason: "timeout", status, nextCursor: status.cursor };
+      const change = await this.connection.waitForTaskChange(taskId, waitCursor, waitRevision, remainingMs);
+      status = await this.status(taskId);
+      const reason =
+        wakeOn === "activity" && status.cursor > cursor
+          ? "activity"
+          : waitAttentionReason(status, cursor, sinceCursor !== undefined);
+      if (reason !== undefined) return { timedOut: false, reason, status, nextCursor: status.cursor };
+      if (change.timedOut) return { timedOut: true, reason: "timeout", status, nextCursor: status.cursor };
+      waitCursor = status.cursor;
+      waitRevision = status.connection.revision;
+    }
   }
 
   async observe(taskId: string, afterCursor: number | undefined, waitSeconds: number) {
@@ -1119,10 +1536,40 @@ export class BridgeService {
 
   async listTasks() {
     const tasks = await this.tasks.list();
+    const connection = this.connection.snapshot();
+    // Mirror status(): refresh the lineage once so a root session deleted on
+    // the Host is actually observed before deriving per-task availability. On
+    // refresh failure keep the cached lineage (the previous list behavior).
+    if (connection.availability === "connected") await this.connection.refreshLineage().catch(() => undefined);
+    const refreshed = this.connection.snapshot();
     return Promise.all(
       tasks.map(async (task) => {
         try {
-          return await this.status(task.taskId);
+          await this.ensureHistoricalAttribution(task).catch(() => undefined);
+          const attribution = await this.attribution.task(task.taskId);
+          const ledger = await this.ledger.snapshot(task.taskId);
+          const workspaceClaim = await this.claims.get(task.taskId);
+          const lineage = refreshed.availability === "connected" ? this.connection.lineageForTask(task.taskId) : [];
+          const rootFound = lineage.find((row) => row.sessionId === task.sessionId)?.found === true;
+          const availability: TaskAvailability =
+            refreshed.availability !== "connected" ? "host_unreachable" : rootFound ? "connected" : "session_not_found";
+          const pending = availability === "connected" ? this.connection.pendingForTask(task.taskId) : [];
+          const queue =
+            availability === "connected"
+              ? this.connection.queueForSession(task.sessionId)
+              : { known: false, stale: false, connectionEpoch: refreshed.connectionEpoch, items: [] };
+          return statusShape(
+            task,
+            refreshed,
+            ledger,
+            lineage,
+            availability,
+            interactionExecution(pending) ?? ledger.execution,
+            pending,
+            queue,
+            workspaceClaim,
+            attribution,
+          );
         } catch (error) {
           return {
             taskId: task.taskId,

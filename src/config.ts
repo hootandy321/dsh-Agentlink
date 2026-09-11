@@ -3,6 +3,9 @@ import { resolve } from "node:path";
 
 export interface BridgeConfig {
   hostUrl: string;
+  hostToken?: string;
+  hostCookie?: string;
+  protocol?: "remote" | "legacy";
   homeDir: string;
   requestTimeoutMs: number;
   allowRemoteHost: boolean;
@@ -78,7 +81,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BridgeConfig {
   const declaredDshVersion = env.DSH_HOST_VERSION?.trim();
   const approvalTimeoutMs = optionalPositiveIntegerEnv(env.DSH_APPROVAL_TIMEOUT_MS);
 
+  const protocol = env.DSH_BRIDGE_PROTOCOL ?? "remote";
+  if (protocol !== "remote" && protocol !== "legacy") throw new Error("DSH_BRIDGE_PROTOCOL must be remote or legacy");
   return {
+    protocol,
+    ...(env.DSH_HOST_TOKEN ? { hostToken: env.DSH_HOST_TOKEN } : {}),
+    ...(env.DSH_HOST_COOKIE ? { hostCookie: env.DSH_HOST_COOKIE } : {}),
     hostUrl: normalizeHostUrl(env.DSH_HOST_URL ?? DEFAULT_HOST_URL, allowRemoteHost),
     homeDir: resolve(env.DSH_BRIDGE_HOME ?? resolve(dshHome, "codex-bridge")),
     requestTimeoutMs: positiveIntegerEnv(env.DSH_REQUEST_TIMEOUT_MS, DEFAULT_TIMEOUT_MS),
