@@ -121,7 +121,7 @@ DSH Web Host 升级到目标版本后，先等待已有任务结束，再重启 
 - 正式版 Remote 认证、问题/审批、取消竞态和 DSH companion 打包加载；
 - Codex 与 Claude Code 的安装器、skill 写入边界、preset 只读校验和保留无关配置。
 
-当前根目录检查通过 176 个测试，`dsh-plugin` 检查通过 31 个测试；CI 还会执行配套插件的 `npm ci`、`check` 和 `pack`。
+当前根目录检查通过 179 个测试，`dsh-plugin` 检查通过 31 个测试；CI 还会执行配套插件的 `npm ci`、`check` 和 `pack`。
 
 本次升级还使用官方 `0.1.5-rc.1` Gateway/Registry 运行构建后的 companion，验证 Remote 分发、输入拒绝和卸载行为。完整 Web Host、浏览器与真实模型端到端流程尚未在新版本重跑；历史联调记录仍对应原记录版本。
 

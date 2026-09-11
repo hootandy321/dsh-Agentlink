@@ -35,3 +35,9 @@ Any other version reports `compatible-untested` when capability probes pass, or 
 - `host.describe.version` remains the placeholder `0.0.1` in both rc.6 and rc.7. It is never used as the compatibility gate.
 - rc.6 and rc.7 both expose `agentPreset.list` and `session.selectModel`; see the multi-caller architecture and the routing design documents before building on them.
 - The rc.6/rc.7 Web API has no auth token; loopback-only remains the default.
+
+## Local upgrade diagnosis (2026-09-11)
+
+A Host left running since September 9 continued serving the old boot manifest after its installation was updated on disk on September 11. The new browser Session Controller waited for `fileUpload`, absent from that old manifest, causing 26 dependent entries to remain pending. Restart the Host after updating its installed packages; a CLI version check alone does not identify the running Host version.
+
+The old Host also exposed a bridge parser bug: compressed history stores N members and N - 1 successive time gaps, not N offsets. The corrected parser was verified read-only against 12 local sessions (21,521 events, including 21,185 compressed members). Regression tests cover text, reasoning and tool-call rows, cumulative time reconstruction and invalid ranges. This does not replace the outstanding full new-Host/browser/model acceptance run.

@@ -28,9 +28,21 @@ export function remoteHistoryEntries(records: unknown[]): DshHistoryEntry[] {
     if (entry.type !== "chunks") throw new DshTransportError("unknown Remote history record");
     const event = record(entry.event), data = record(event.data);
     const parts = event.type === "chunkrow/tool-call-chunks" ? data.args : data.texts;
-    if (!Array.isArray(parts) || !Array.isArray(data.dt) || parts.length !== data.dt.length) throw new DshTransportError("invalid compressed history range");
-    return parts.map((_, index) => ({ event: dshSessionEventSchema.parse({ type: "assistant/chunk", seq: event.seq + index,
-      time: event.time + data.dt[index], data: { omitted: "assistant_chunk" } }) }));
+    if (!["chunkrow/text-chunks", "chunkrow/reasoning-chunks", "chunkrow/tool-call-chunks"].includes(event.type)
+      || !Array.isArray(parts) || parts.length === 0 || !parts.every(part => typeof part === "string")
+      || !Array.isArray(data.dt) || data.dt.length !== parts.length - 1 || !data.dt.every(Number.isSafeInteger)
+      || !Number.isSafeInteger(event.seq) || !Number.isSafeInteger(event.time)) {
+      throw new DshTransportError("invalid compressed history range");
+    }
+    // DSH stores the first timestamp on the row and N - 1 successive gaps.
+    let time = event.time;
+    return parts.map((_, index) => {
+      if (index > 0) time += data.dt[index - 1];
+      const seq = event.seq + index;
+      if (!Number.isSafeInteger(time) || !Number.isSafeInteger(seq)) throw new DshTransportError("invalid compressed history range");
+      return { event: dshSessionEventSchema.parse({ type: "assistant/chunk", seq,
+        time, data: { omitted: "assistant_chunk" } }) };
+    });
   });
 }
 

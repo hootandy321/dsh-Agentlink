@@ -137,7 +137,7 @@ test("Remote history uses observed cursor, never a speculative maximum", async (
 });
 
 test("compressed rows preserve every sequence position without text retention", () => {
-  const events = remoteHistoryEntries([{ type: "chunks", event: { type: "chunkrow/text-chunks", seq: 10, time: 100, data: { texts: ["secret", "text"], dt: [0, 5] } } }]);
+  const events = remoteHistoryEntries([{ type: "chunks", event: { type: "chunkrow/text-chunks", seq: 10, time: 100, data: { texts: ["secret", "text"], dt: [5] } } }]);
   assert.deepEqual(events.map(row => row.event.seq), [10, 11]);
   assert.equal(JSON.stringify(events).includes("secret"), false);
 });
@@ -336,3 +336,20 @@ test("DSH 0.1.5 history keeps final messages with embedded streams without optin
     assert.equal(h.wsFrames[0].payload.args.request.assistantStream, undefined);
   } finally { await h.close(); }
 });
+
+for (const [type, field] of [["text-chunks", "texts"], ["reasoning-chunks", "texts"], ["tool-call-chunks", "args"]]) {
+  test(`compressed ${type} uses N - 1 successive timestamp gaps`, () => {
+    const make = (dt: unknown, parts: unknown = ["private-a", "private-b", "private-c"]) => [{ type: "chunks", event: {
+      type: `chunkrow/${type}`, seq: 10, time: 100, data: { [field!]: parts, dt },
+    } }];
+    const events = remoteHistoryEntries(make([5, 7]));
+    assert.deepEqual(events.map(row => [row.event.seq, row.event.time]), [[10, 100], [11, 105], [12, 112]]);
+    assert.equal(JSON.stringify(events).includes("private-"), false);
+    assert.deepEqual(remoteHistoryEntries(make([], ["one"]))[0]?.event.time, 100);
+    for (const gaps of [[0, 5, 7], [5], [5, NaN], [5, "7"]]) {
+      assert.throws(() => remoteHistoryEntries(make(gaps)), /invalid compressed history range/);
+    }
+    assert.throws(() => remoteHistoryEntries(make([], [])), /invalid compressed history range/);
+    assert.throws(() => remoteHistoryEntries(make([Number.MAX_SAFE_INTEGER, 1])), /invalid compressed history range/);
+  });
+}

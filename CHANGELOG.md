@@ -21,6 +21,9 @@ with it is `dsh-agentlink-dsh-plugin` `0.1.0`.
 
 ### Changed
 
+- Fixed legacy Remote compressed history decoding: N fragments have N - 1
+  successive timestamp gaps. Valid history no longer disconnects the bridge.
+
 - `dsh_status` now returns a compact supervision summary by default. Callers
   can request `result`, `interactions`, `queue`, `workspace`, `sessions`,
   `connection`, `recovery`, `route`, or `cost` explicitly through `include`.
