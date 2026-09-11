@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-test("client registers the header action and lazy details panel", async () => {
+test("client registers a session-scoped DSH 0.1.5 sidebar tab and disposes its registrations", async () => {
   let loaded: { id: string; factory: (require: (id: string) => unknown) => unknown } | undefined;
   (globalThis as unknown as { window: unknown }).window = {
     __ModuleLoader__: {
@@ -24,59 +24,73 @@ test("client registers the header action and lazy details panel", async () => {
 
   const registrations: unknown[] = [];
   const injectors = new Map<string, () => () => void>();
-  let detailsOpened = 0;
+  const openedTabs: string[] = [];
+  const effects: Array<() => void> = [];
+  let tabDefinition: any;
+  let tabComponent: any;
+  let disposed = 0;
   let openedSession: string | undefined;
   let openedAddress: unknown;
-  let selection = "session-root";
-  let selectionChanged = () => {};
-  let detailsDisposed = 0;
+
   const ctx = {
     remote: { agentlink: {} },
     sessions: {
-      list: { getSnapshot: () => ({ current: selection }), subscribe: (fn: () => void) => { selectionChanged = fn; return () => {}; } },
       open: (sessionId: string) => { openedSession = sessionId; },
       openSubagent: (address: unknown) => { openedAddress = address; }
     },
-    layout: {
-      openDetails: () => { detailsOpened += 1; },
-      closeDetails: () => undefined
-    },
-    effect: (fn: () => unknown) => fn(),
+    sidebarRight: { openTab: (kind: string) => { openedTabs.push(kind); } },
+    sidebarRightTabs: { register: (definition: any) => { tabDefinition = definition; return () => { disposed++; }; } },
+    effect: (fn: () => any) => { effects.push(fn()); },
     slots: {
       inject: (name: string, fn: () => () => void) => {
         injectors.set(name, fn);
-        return () => undefined;
+        return () => { disposed++; };
       },
-      register: (options: unknown) => {
+      register: (options: any, component: any) => {
+        if (options.name === "sidebar.right.pane.tab") tabComponent = component;
         registrations.push(options);
-        return () => { if ((options as {name:string}).name === "details") detailsDisposed += 1; };
+        return () => { disposed++; };
       }
     }
   };
 
   mod.apply(ctx);
-  injectors.get("details")?.();
-  injectors.get("conversation.session.header.actions")?.();
+  const disposeBody = injectors.get("sidebar.right.pane.tab")!();
+  const disposeHeader = injectors.get("conversation.session.header.actions")!();
   const header = registrations.find((entry) => (entry as { id?: string }).id === "dsh-agentlink") as {
     inject: (sessionId: string) => { openAgentlink: () => void };
   };
   header.inject("session-root").openAgentlink();
-  const details = registrations.find((entry) => (entry as { name?: string }).name === "details") as {
-    inject: () => { openSession: (session: {sessionId: string; subagentAddress?: unknown}) => void; nativeDetails: () => void; remote: { agentlink: { summary: (input: unknown) => Promise<unknown>; prices: () => Promise<unknown> } } };
+  const details = registrations.find((entry) => (entry as { name?: string }).name === "sidebar.right.pane.tab") as {
+    inject: (sessionId: string) => { sessionId: string; openSession: (session: {sessionId: string; subagentAddress?: unknown}) => void; remote: { agentlink: { summary: (input: unknown) => Promise<unknown>; prices: () => Promise<unknown> } } };
   };
-  details.inject().openSession({sessionId: "session-root"});
+  details.inject("session-root").openSession({sessionId: "session-root"});
   const address = {parentSessionId:"session-root",childSessionId:"child",mode:"one-shot"};
-  details.inject().openSession({sessionId: "child", subagentAddress:address});
+  details.inject("session-root").openSession({sessionId: "child", subagentAddress:address});
   assert.deepEqual(openedAddress,address);
 
-  assert.deepEqual(mod.inject, ["slots", "layout", "sessions"]);
-  assert.equal(detailsOpened, 1);
+  assert.deepEqual(mod.inject, ["slots", "sidebarRight", "sidebarRightTabs", "sessions"]);
+  assert.deepEqual(openedTabs, ["agentlink"]);
+  assert.equal(tabDefinition.id, "dsh-agentlink-dsh-plugin");
+  assert.equal(tabDefinition.kind, "agentlink");
   assert.equal(openedSession, "session-root");
-  details.inject().nativeDetails();
-  assert.equal(detailsDisposed, 1);
-  header.inject("session-root").openAgentlink();
-  selection = "another-session"; selectionChanged();
-  assert.equal(detailsDisposed, 2);
+  assert.equal(details.inject("another-session").sessionId, "another-session");
+  // A tab closes through its own bound actions, even after the active session changes.
+  const tabActions: string[] = [];
+  const rendered = tabComponent({ ...details.inject("session-root"), useTabInfo: () => ({ tab: { actions: {
+    close: () => tabActions.push("close-root-tab"), openTab: (kind: string) => tabActions.push(kind),
+  } } }) });
+  const buttons: any[] = [];
+  function visit(node: any): void {
+    if (Array.isArray(node)) { node.forEach(visit); return; }
+    if (!node?.element) return;
+    if (node.element[0] === "button") buttons.push(node.element);
+    node.element.slice(2).forEach(visit);
+  }
+  visit(rendered);
+  buttons.find(button => button[2] === "关闭")[1].onClick();
+  buttons.find(button => button[2] === "右栏首页")[1].onClick();
+  assert.deepEqual(tabActions, ["close-root-tab", "guide"]);
   const originalFetch = globalThis.fetch;
   const requests: { url: string; body: any }[] = [];
   globalThis.fetch = async (url, init) => {
@@ -85,7 +99,7 @@ test("client registers the header action and lazy details panel", async () => {
     return new Response(JSON.stringify({ rpcId: body.rpcId, result: { ok: true, value: { visible: true } } }));
   };
   try {
-    const remote = details.inject().remote;
+    const remote = details.inject("session-root").remote;
     assert.deepEqual(await remote.agentlink.summary({ sessionId: "session-root" }), { visible: true });
     await remote.agentlink.prices();
     assert.equal(requests[0]?.url, "/api/agentlink/summary");
@@ -94,7 +108,9 @@ test("client registers the header action and lazy details panel", async () => {
     globalThis.fetch = async () => new Response(JSON.stringify({ rpcId: "wrong", result: { ok: true, value: {} } }));
     await assert.rejects(remote.agentlink.summary({}), /response id mismatch/);
   } finally { globalThis.fetch = originalFetch; }
-  assert.ok(registrations.some((entry) => (entry as { name?: string }).name === "details"));
+  disposeBody(); disposeHeader(); effects.reverse().forEach(dispose => dispose());
+  assert.equal(disposed, 5);
+  assert.ok(registrations.some((entry) => (entry as { name?: string }).name === "sidebar.right.pane.tab"));
 });
 
 test("packed client executes as the classic script required by the official DSH loader", async () => {

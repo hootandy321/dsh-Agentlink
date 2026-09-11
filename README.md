@@ -29,9 +29,9 @@ Supervision now returns compact status by default, with details selected through
 - **Compact supervision by default.** `dsh_status` returns the fields needed to supervise a task. Request extra categories with `include` (`result`, `interactions`, `queue`, `workspace`, `sessions`, `connection`, `recovery`, `route`, or `cost`) when you need them. `dsh_wait` uses `attention` as its default wake policy, so ordinary tool progress and streaming chunks do not wake the primary agent; use `wakeOn="activity"` when progress-level wakeups are required. `dsh_tail` supports bounded event and session filters with an independent scan cursor and does not repeat a full status snapshot.
 - **Caller and task attribution.** A `runId` can join multiple delegated root tasks and their DSH child sessions. Each submission can carry the caller client and model (`provider`, `id`, `serviceTier`, and source), so Codex and Claude Code calls can be grouped and compared without changing the model route configured in DSH. Missing or overlapping attribution stays unknown instead of being inferred from the latest caller setting.
 - **Claude Code and preset-aware setup.** Codex and Claude Code have supported setup paths. The Claude installer keeps project MCP and skill files scoped to the selected project, reports trust and approval state, and preserves unrelated configuration. Preset-aware routing remains read-only and reports the resolved preset before execution.
-- **DSH companion panel.** The companion adds an Agentlink action in the native DSH session details area. It groups calls by source (for example Codex or Claude Code), then by run and session, and can open root and child sessions through the native DSH catalog. The panel shows this session, the complete run, and the current Host-wide Agentlink totals.
+- **DSH companion panel.** The companion adds an Agentlink action in the session header that opens a native right-sidebar tab. It groups calls by source (for example Codex or Claude Code), then by run and session, and can open root and child sessions through the native DSH catalog. The panel shows this session, the complete run, and the current Host-wide Agentlink totals.
 - **API price comparison.** The panel estimates the DSH route and the caller's API route using the same observed input, cache-read, cache-write, and output token buckets. This is a price substitution estimate, not a subscription bill or a claim that the primary model would have used the same number of tokens. Unknown prices and missing usage stay unknown; they are never rendered as zero. Manual DSH continuations remain DSH-only unless a new caller comparison is explicitly registered.
-- **Official DSH target.** The tested target is the official npm `latest` channel at DSH `0.1.2-rc.1`. This release does not target `0.1.5-alpha.1`; the caller bridge and the companion are installed separately.
+- **Official DSH target.** The tested target is the official npm `latest` channel at DSH `0.1.5-rc.1`. The `next` and `alpha` channels are not targeted; the caller bridge and the companion are installed separately.
 
 > **API price comparison screenshot placeholder** — add the final comparison screenshot here after the release review.
 <!-- Suggested filename: assets/agentlink-api-price-comparison.png -->
@@ -56,7 +56,7 @@ Do not start or stop dsh web for me. Tell me when I need to reload the selected 
 
 ### Manual installation
 
-1. Check the environment. DSH CLI `0.1.2-rc.1` is the current tested target.
+1. Check the environment. DSH CLI `0.1.5-rc.1` is the current tested target.
 
    ```bash
    node --version
@@ -69,7 +69,7 @@ Do not start or stop dsh web for me. Tell me when I need to reload the selected 
    dsh web
    ```
 
-   Pass the Host launch token to the MCP process through `DSH_HOST_TOKEN`; keep `DSH_HOST_URL` as the origin only. The default transport targets DSH `0.1.2-rc.1`.
+   Pass the Host launch token to the MCP process through `DSH_HOST_TOKEN`; keep `DSH_HOST_URL` as the origin only. The default transport targets DSH `0.1.5-rc.1`.
 
 3. Clone, install, and run the setup wizard.
 

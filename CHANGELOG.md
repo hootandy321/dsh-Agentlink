@@ -13,8 +13,8 @@ with it is `dsh-agentlink-dsh-plugin` `0.1.0`.
 - Added caller attribution and task lineage. A `runId` groups multiple root
   tasks and DSH child sessions; each submission can record its caller client,
   model, service tier, and model source.
-- Added the DSH companion plugin. It adds an Agentlink action to the native DSH
-  details area, groups calls by caller, run, and session, and opens root and
+- Added the DSH companion plugin. It adds an Agentlink action to the DSH session
+  header that opens a native right-sidebar tab, groups calls by caller, run, and session, and opens root and
   child sessions through the native session catalog.
 - Added three cost views: the current session, all sessions in the current
   run, and the Agentlink aggregate on the current DSH Host.
@@ -43,8 +43,11 @@ with it is `dsh-agentlink-dsh-plugin` `0.1.0`.
 
 - Retains the existing Codex and Claude Code setup paths, interactive trust and approval boundaries, and preset launch verification from main. The new Remote adapter supports preset verification too.
 
-- The tested target is the official npm `latest` channel at DSH `0.1.2-rc.1`.
-  This release does not target `0.1.5-alpha.1`.
+- Migrated the companion from the removed `details` slot and `layout.openDetails()`
+  to `sidebarRightTabs`, `sidebarRight.openTab()`, and the session-scoped
+  `sidebar.right.pane.tab` slot. Closing a tab uses its own bound actions.
+- The tested target is the official npm `latest` channel at DSH `0.1.5-rc.1`.
+  The `next` and `alpha` channels are not targeted.
 - Install the caller bridge from the repository, then install the companion
   package separately in the DSH Web profile. Rebuild and restart the DSH Host
   only after active tasks have finished, then reload the caller and DSH Web.

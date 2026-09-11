@@ -130,12 +130,15 @@ interface AgentlinkWindow extends Window {
     }
 
     function HeaderAction({ openAgentlink }: any) { return h("button", { type: "button", className: "agentlink-btn", onClick: openAgentlink }, "Agentlink"); }
-    function AgentlinkDetails({ sessionId, remote, closePanel, nativeDetails, openSession }: any) {
+    function AgentlinkDetails({ sessionId, remote, useTabInfo, openSession }: any) {
+      const { tab: sidebarTab } = useTabInfo();
+      const closePanel = () => sidebarTab.actions.close();
+      const openGuide = () => sidebarTab.actions.openTab("guide");
       const [tab, setTab] = React.useState("cost");
       const { summary, runs, error } = useRemoteData(remote, sessionId, tab);
       return h("aside", { className: "agentlink-panel", "aria-label": "Agentlink 成本与调用" }, h("style", null, css),
         h("div", { className: "agentlink-head" }, h("span", { className: "agentlink-title" }, "Agentlink"), h("button", { type: "button", className: "agentlink-btn", onClick: closePanel }, "关闭")),
-        h("div", { className: "agentlink-tabs" }, ["cost", "calls"].map(value => h("button", { type: "button", className: "agentlink-tab", "data-active": tab === value, key: value, onClick: () => setTab(value) }, value === "cost" ? "成本" : "调用")), h("button", { type: "button", className: "agentlink-btn", onClick: nativeDetails }, "原生详情")),
+        h("div", { className: "agentlink-tabs" }, ["cost", "calls"].map(value => h("button", { type: "button", className: "agentlink-tab", "data-active": tab === value, key: value, onClick: () => setTab(value) }, value === "cost" ? "成本" : "调用")), h("button", { type: "button", className: "agentlink-btn", onClick: openGuide }, "右栏首页")),
         error ? h("div", { className: "agentlink-warning", role: "alert" }, `数据暂不可用：${error}`) : null,
         tab === "cost" ? h(CostView, { summary, remote, sessionId }) : h(CallView, { runs, remote, openSession }));
     }
@@ -167,26 +170,25 @@ interface AgentlinkWindow extends Window {
 
     function apply(ctx: any) {
       const remote = createReader();
-      let registerDetails: (() => void) | undefined, disposeDetails: (() => void) | undefined, openedFor: string | undefined;
-      const release = () => { const dispose = disposeDetails; disposeDetails = undefined; openedFor = undefined; dispose?.(); };
-      const closePanel = () => { release(); ctx.layout.closeDetails(); };
-      const nativeDetails = () => { release(); ctx.layout.openDetails(); };
-      const openAgentlink = (sessionId: string) => { openedFor = sessionId; registerDetails?.(); ctx.layout.openDetails(); };
-      ctx.effect(() => ctx.slots.inject("details", () => {
-        registerDetails = () => {
-          disposeDetails ??= ctx.slots.register({ name: "details", priority: -100,
-            inject: () => ({ remote, closePanel, nativeDetails, sessionId: openedFor, openSession: (session: any) => session.subagentAddress ? ctx.sessions.openSubagent(session.subagentAddress) : ctx.sessions.open(session.sessionId) }),
-          }, AgentlinkDetails);
-        };
-        return () => { registerDetails = undefined; release(); };
-      }), "agentlink details registration");
+      const tabId = "dsh-agentlink-dsh-plugin";
+      ctx.effect(() => ctx.sidebarRightTabs.register({
+        id: tabId, kind: "agentlink", title: () => "Agentlink",
+        guide: [{ order: 100, title: () => "Agentlink", description: () => "调用来源与 API 费用估算" }],
+      }), "agentlink sidebar tab type");
+      ctx.effect(() => ctx.slots.inject("sidebar.right.pane.tab", () => ctx.slots.register({
+        name: "sidebar.right.pane.tab", key: tabId,
+        inject: (sessionId: string) => ({
+          remote, sessionId,
+          openSession: (session: any) => session.subagentAddress
+            ? ctx.sessions.openSubagent(session.subagentAddress)
+            : ctx.sessions.open(session.sessionId),
+        }),
+      }, AgentlinkDetails)), "agentlink sidebar tab body");
       ctx.effect(() => ctx.slots.inject("conversation.session.header.actions", () => ctx.slots.register({
-        name: "conversation.session.header.actions", id: "dsh-agentlink", inject: (sessionId: string) => ({ openAgentlink: () => openAgentlink(sessionId) }),
+        name: "conversation.session.header.actions", id: "dsh-agentlink",
+        inject: () => ({ openAgentlink: () => ctx.sidebarRight.openTab("agentlink") }),
       }, HeaderAction)), "agentlink header action");
-      ctx.effect(() => ctx.sessions.list.subscribe(() => {
-        if (openedFor !== undefined && ctx.sessions.list.getSnapshot().current !== openedFor) closePanel();
-      }), "agentlink session navigation cleanup");
     }
-    return { apply, inject: ["slots", "layout", "sessions"] };
+    return { apply, inject: ["slots", "sidebarRight", "sidebarRightTabs", "sessions"] };
   },
 });

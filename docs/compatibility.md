@@ -8,8 +8,19 @@ This page records which DSH versions dsh-Agentlink has actually been tested agai
 |---|---|---|
 | `0.1.0-rc.6` | tested | 2026-08 |
 | `0.1.0-rc.7` | tested | 2026-08-19 |
+| `0.1.2-rc.1` | previously tested Remote target | 2026-09-09 |
+| `0.1.5-rc.1` | current target; automated adapter and companion checks | 2026-09-11 |
 
 Any other version reports `compatible-untested` when capability probes pass, or `untested` from the long-running bridge until `DSH_HOST_VERSION` is declared with a tested value.
+
+## 0.1.5-rc.1 evidence (2026-09-11)
+
+- npm `latest` resolves to `0.1.5-rc.1`; `next` is `0.1.5-rc.2` and `alpha` is `0.1.5-alpha.2`. The target follows `latest`, not the numerically highest prerelease.
+- The published layout package no longer provides `details` or `layout.openDetails()`. The companion now registers a native `sidebarRightTabs` page and a session-scoped `sidebar.right.pane.tab` body. Session navigation and tab-local close/guide actions are covered by tests.
+- The published Gateway and Typert Registry dispatch the built companion's Remote methods in a real Cordis context. Tests cover run registration, summary, session lists, prices, invalid input, and plugin disposal.
+- Remote fixtures cover launch-token/cookie authentication, control/follow streams, final messages with embedded streams, questions/approvals, and cancellation. Live assistant frames remain opt-in upstream; this bridge does not request them.
+- Clean companion `npm ci`, both TypeScript builds, bridge/companion tests, and package inspection pass. Development peers are selected at rc.1 to avoid npm resolving rc.2 into the rc.1 test environment.
+- Not verified on this version: a complete Web Host/browser/model run, live persistence across Host restarts, and the native spawn-to-child browser flow. Earlier live evidence below applies only to its stated version.
 
 ## rc.7 evidence (2026-08-19)
 

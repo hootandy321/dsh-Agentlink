@@ -222,7 +222,7 @@ export class FakeConnection implements DshConnection {
       baseUrl,
       connectionEpoch: 1,
       revision: 1,
-      testedDshVersions: ["0.1.0-rc.6", "0.1.0-rc.7", "0.1.2-rc.1"],
+      testedDshVersions: ["0.1.0-rc.6", "0.1.0-rc.7", "0.1.2-rc.1", "0.1.5-rc.1"],
       compatibility: "capability-probed",
       capabilities: {
         unaryRpc: true,

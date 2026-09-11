@@ -34,7 +34,7 @@ export function remoteHistoryEntries(records: unknown[]): DshHistoryEntry[] {
   });
 }
 
-/** DSH 0.1.2-rc.1 Remote transport. Keeps legacy coordination shapes internal. */
+/** DSH 0.1.5-rc.1 Remote transport. Keeps legacy coordination shapes internal. */
 export class RemoteDshClient implements DshApi {
   private cookie: string | undefined;
   private authentication: Promise<void> | undefined;

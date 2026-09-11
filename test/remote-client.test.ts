@@ -316,3 +316,23 @@ test("released Remote preset roster preserves verification without the legacy ha
     assert.equal(h.requests[0].method, "agentPresets/list");
   } finally { await h.close(); }
 });
+
+test("DSH 0.1.5 history keeps final messages with embedded streams without opting into live assistant frames", async () => {
+  const event = {
+    type: "assistant/message", seq: 8, time: 100, surfaceOp: "append",
+    data: { turn: 1, step: 1, message: { role: "assistant", content: [{ type: "text", text: "Done" }] }, stream: [], usage: { inputTokens: 12, outputTokens: 2 } },
+  };
+  const h = await host({ followSnapshots: { session: {
+    type: "snapshot", header: { sessionId: "session" }, cursor: 9, hasMore: false,
+    projections: { asOfSeq: 9, values: {} },
+    records: [{ type: "event", event }, { type: "event", event: { type: "turn/end", seq: 9, time: 101, data: { turn: 1, reason: { kind: "completed" } } } }],
+  } } });
+  try {
+    const client = new RemoteDshClient(h.url, 1000, "test-token");
+    const history = await client.sessionHistory("session");
+    assert.deepEqual(history.events[0]?.event.data, event.data);
+    assert.equal(history.events[1]?.event.type, "turn/end");
+    assert.equal(history.hasMore, false);
+    assert.equal(h.wsFrames[0].payload.args.request.assistantStream, undefined);
+  } finally { await h.close(); }
+});

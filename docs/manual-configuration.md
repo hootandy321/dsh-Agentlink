@@ -28,7 +28,7 @@ args = ["/absolute/path/to/dsh-Agentlink/dist/index.js"]
 
 [mcp_servers.dsh_agentlink.env]
 DSH_HOST_URL = "http://127.0.0.1:3080"
-DSH_HOST_VERSION = "0.1.2-rc.1"
+DSH_HOST_VERSION = "0.1.5-rc.1"
 DSH_BRIDGE_AGENT_PRESET = "code"
 
 [mcp_servers.dsh_agentlink.tools.dsh_resolve_approval]
@@ -43,7 +43,7 @@ If an earlier installation still uses `dsh_collab`, do not keep both entries: ru
 
 ## Environment variables
 
-- `DSH_BRIDGE_PROTOCOL` — defaults to `remote` for DSH `0.1.2-rc.1`; explicitly use `legacy` for older rc.6/rc.7 Hosts.
+- `DSH_BRIDGE_PROTOCOL` — defaults to `remote` for DSH `0.1.5-rc.1`; explicitly use `legacy` for older rc.6/rc.7 Hosts.
 - `DSH_HOST_TOKEN` — launch token exchanged for the Host's signed cookie; keep it out of the Host URL and shared logs.
 - `DSH_HOST_COOKIE` — previously issued signed cookie, complete `name=value`; treat it as a credential and refresh it when expired.
 
@@ -70,11 +70,11 @@ dsh web --host 127.0.0.1 --port 3080
 npm run doctor
 ```
 
-The default Remote transport targets DSH CLI `0.1.2-rc.1`. Earlier `0.1.0-rc.6` and `0.1.0-rc.7` remain explicit legacy targets. In those legacy versions, `host.describe.version` reports the placeholder product value `0.0.1`; it is not the CLI/package version. Doctor checks the CLI version and probes Host capabilities separately. It also reports the bridge's fail-closed lock locations under `DSH_BRIDGE_HOME` (`claims/registry.lock` and `ledgers/<task>/events.lock`) read-only and never cleans them. Lock diagnostics expose only structural presence/type and bounded `entriesObserved`/`entriesTruncated` observations; they never read `owner.json` content or report pid, token, or `createdAt`.
+The default Remote transport targets DSH CLI `0.1.5-rc.1`. Earlier `0.1.0-rc.6` and `0.1.0-rc.7` remain explicit legacy targets. In those legacy versions, `host.describe.version` reports the placeholder product value `0.0.1`; it is not the CLI/package version. Doctor checks the CLI version and probes Host capabilities separately. It also reports the bridge's fail-closed lock locations under `DSH_BRIDGE_HOME` (`claims/registry.lock` and `ledgers/<task>/events.lock`) read-only and never cleans them. Lock diagnostics expose only structural presence/type and bounded `entriesObserved`/`entriesTruncated` observations; they never read `owner.json` content or report pid, token, or `createdAt`.
 
 The ingestion fix does not compact an existing 5 MB+ ledger. Preserve the old bridge home for inspection. If necessary, configure a separate `DSH_BRIDGE_HOME` for new delegations, understanding that bridge task ids, cursors, and claims begin fresh there. DSH `session.history` remains the authoritative conversation record. There is intentionally no automatic ledger or lock cleanup command.
 
-DSH `0.1.2-rc.1` uses a launch token and signed cookie. Configure credentials locally after setup; the wizard does not retrieve or persist them for you. The older rc.6/rc.7 Web API has no auth token. Loopback-only is the safe default. A remote URL must be an explicitly trusted deployment and requires `DSH_ALLOW_REMOTE_HOST=true`.
+DSH `0.1.5-rc.1` uses a launch token and signed cookie. Configure credentials locally after setup; the wizard does not retrieve or persist them for you. The older rc.6/rc.7 Web API has no auth token. Loopback-only is the safe default. A remote URL must be an explicitly trusted deployment and requires `DSH_ALLOW_REMOTE_HOST=true`.
 
 dsh-Agentlink is not a DSH Cordis bundle. Do not install it with `dsh plugin --profile ... add ...`.
 

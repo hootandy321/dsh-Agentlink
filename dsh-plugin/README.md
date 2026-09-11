@@ -1,14 +1,14 @@
 # Agentlink DSH companion
 
-配套包在 DSH 右侧详情栏提供来源导航和费用预估。目标是 npm `latest`
-渠道发布的 `@deepseek-ai/dsh@0.1.2-rc.1`，不依赖 `0.1.5-alpha.1`。
+配套包在 DSH 原生右栏标签页提供来源导航和费用预估。目标是 npm `latest`
+渠道发布的 `@deepseek-ai/dsh@0.1.5-rc.1`，不依赖 `next` 或 `alpha` 渠道。
 调用侧 MCP 和这个 Cordis bundle 分别安装。
 
 ## 0.1.0 更新内容
 
 这是与 dsh-Agentlink `0.2.0` 配套的首个 DSH companion 版本：
 
-- 在 DSH 原生 session 详情栏增加 Agentlink 入口，按调用来源、run、root session 和 child session 导航。
+- 在 DSH session 顶部增加 Agentlink 入口，打开原生右栏标签页，按调用来源、run、root session 和 child session 导航。
 - 提供三个费用视角：当前 session、本次 `runId` 涉及的全部 session，以及当前 DSH Host 内所有 Agentlink 调用的累计统计。
 - 记录调用方主模型，用同一组已观测 token 对比 DSH 实际模型和主模型的 API 价格；调用方模型只用于比较，不会改变 DSH 的执行路由。
 - 将 `input`、`cache read`、`cache write` 和 `output` 分桶计价；未知价格、缺失 usage、无法确认归属的请求保持未知并显示覆盖范围，不按零计算。
@@ -27,6 +27,8 @@ npm run check
 npm pack
 ```
 
+开发依赖显式选择 DSH `0.1.5-rc.1` 的配套包，避免 npm 将满足上游 `^0.1.5-rc.1` 的 `next` 渠道 rc.2 包混入检查环境。请使用提交的 lockfile 执行 `npm ci`。
+
 在你要使用的 DSH Host 上，用实际生成的 tgz 绝对路径安装到 Web profile：
 
 ```sh
@@ -40,7 +42,8 @@ Host 并刷新网页。不要在有运行中任务时直接重启；升级前先
 
 - **成本**：本 session、同 run 的所有 session、当前 Host 插件累计。
 - **调用**：Codex / Claude / 其他来源 → run → 根会话与子会话。
-- **原生详情**：释放插件面板，恢复 DSH 原生详情。
+- **右栏首页**：打开 DSH 原生 guide 标签页。
+- **关闭**：只关闭当前 Agentlink 标签页；其他右栏标签页保持可用。
 
 来源分组属于插件导航；不会把 Codex/Claude 伪装成工作目录，或改动会话 cwd。
 费用是同量 token、同缓存结构的 API 价格试算，不是订阅账单节省。

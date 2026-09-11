@@ -29,9 +29,9 @@ dsh-Agentlink 是一个让你直接在原本的 AI 工作工具里调用 DeepSee
 - **默认减少监督信息。** `dsh_status` 默认只返回监督任务所需的摘要；需要时通过 `include` 选择 `result`、`interactions`、`queue`、`workspace`、`sessions`、`connection`、`recovery` 或 `cost`。`dsh_wait` 默认使用 `attention`，普通工具进度和流式 chunk 不会唤醒主 agent；需要逐步进度时再显式使用 `wakeOn="activity"`。`dsh_tail` 支持按事件、session、有界条数和游标读取，不再每次附带完整 status。
 - **调用来源和任务归属。** 一个 `runId` 可以串起多个委派根任务及其 DSH 子 session。每次 submission 都可以带调用方和主模型（`provider`、`id`、`serviceTier`、来源），因此 Codex、Claude Code 等来源可以分组并进行 API 价格对比，同时不改变 DSH 中配置的执行模型。归属不明确或提交重叠时保留为未知，不用最新调用方设置猜测。
 - **Claude Code 与 preset 感知安装。** Codex 和 Claude Code 都有独立的安装路径。Claude 安装器将项目 MCP 与 skill 限定在选定项目，分别报告信任、审批和 Host 状态，并保留无关配置。preset 感知路由当前只做只读校验和解析结果报告。
-- **DSH 配套插件右栏。** 插件在 DSH 原生 session 详情区域增加 Agentlink 入口，按来源（例如 Codex、Claude Code）→ run → session 组织调用，并通过原生 catalog 打开根 session 和子 session。面板同时展示当前 session、这次完整 run，以及当前 Host 内插件累计的统计。
+- **DSH 配套插件右栏。** 插件在 DSH session 顶部增加 Agentlink 入口，打开原生右栏标签页，按来源（例如 Codex、Claude Code）→ run → session 组织调用，并通过原生 catalog 打开根 session 和子 session。面板同时展示当前 session、这次完整 run，以及当前 Host 内插件累计的统计。
 - **API 价格对比。** 面板使用相同的已观测未缓存输入、缓存读取、缓存写入和输出 token 桶，对比 DSH 执行模型与调用方主模型的 API 价格。这是价格替代试算，不是订阅账单，也不说明主模型实际会使用相同 token。价格未知或 usage 缺失时保留未知，绝不显示为零；DSH 手动续写默认只计 DSH 费用，除非显式登记新的调用方比较关系。
-- **官方 DSH 目标版本。** 当前验证目标是官方 npm `latest` 渠道的 DSH `0.1.2-rc.1`。本次更新不以 `0.1.5-alpha.1` 为目标；调用侧 bridge 与 DSH 配套插件分别安装。
+- **官方 DSH 目标版本。** 当前验证目标是官方 npm `latest` 渠道的 DSH `0.1.5-rc.1`。本次更新以默认发布渠道为准；调用侧 bridge 与 DSH 配套插件分别安装。
 
 > **API 费用对比截图占位** —— 发布审核后可在此放入最终的价格对比截图。
 <!-- 建议文件名：assets/agentlink-api-price-comparison.png -->
@@ -56,7 +56,7 @@ Claude Code 会安装项目 MCP 入口和随仓库提供的项目 skill；只有
 
 ### 手动安装
 
-1. 检查环境。当前经过测试的 DSH CLI 目标是 `0.1.2-rc.1`。
+1. 检查环境。当前经过测试的 DSH CLI 目标是 `0.1.5-rc.1`。
 
    ```bash
    node --version

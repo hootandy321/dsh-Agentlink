@@ -52,7 +52,7 @@
 
 ## DSH companion 0.1.0
 
-配套插件面向官方 DSH npm `latest` 渠道中的 `0.1.2-rc.1`。它使用 DSH 原生右侧 details 和 session header action 扩展点，目标是跟随 DSH 当前 session，而不是改写 DSH 的工作目录或项目归属。
+配套插件面向官方 DSH npm `latest` 渠道中的 `0.1.5-rc.1`。它使用 DSH 原生 `sidebarRightTabs`、`sidebar.right.pane.tab` 和 session header action 扩展点，目标是跟随 DSH 当前 session，而不是改写 DSH 的工作目录或项目归属。
 
 右栏包含两个视图：
 
@@ -109,7 +109,7 @@ dsh plugin add /absolute/path/dsh-agentlink-dsh-plugin-0.1.0.tgz --profile web
 
 DSH Web Host 升级到目标版本后，先等待已有任务结束，再重启 Host 并刷新 DSH Web；Codex 或 Claude Code 也要重新加载 MCP 配置。使用自定义 DSH 路由时，需要在插件 `prices` 配置中明确填写 provider、model、计费桶、币种、生效时间和来源，不把第三方路由自动套成官方价格。
 
-本次支持的 DSH 目标是官方 npm `latest` 渠道的 `0.1.2-rc.1`。`0.1.5-alpha.1` 不属于本次目标版本；“latest 渠道”表示安装来源和兼容目标，不把 `rc` 称为无预发布后缀的 GA 版本。
+本次支持的 DSH 目标是官方 npm `latest` 渠道的 `0.1.5-rc.1`。`next` 和 `alpha` 渠道不属于本次目标版本；“latest 渠道”表示安装来源和兼容目标，不把 `rc` 称为无预发布后缀的 GA 版本。
 
 ## 验证范围
 
@@ -121,7 +121,9 @@ DSH Web Host 升级到目标版本后，先等待已有任务结束，再重启 
 - 正式版 Remote 认证、问题/审批、取消竞态和 DSH companion 打包加载；
 - Codex 与 Claude Code 的安装器、skill 写入边界、preset 只读校验和保留无关配置。
 
-当前根目录检查通过 172 个测试，`dsh-plugin` 检查通过 30 个测试；CI 还会执行配套插件的 `npm ci`、`check` 和 `pack`。
+当前根目录检查通过 176 个测试，`dsh-plugin` 检查通过 31 个测试；CI 还会执行配套插件的 `npm ci`、`check` 和 `pack`。
+
+本次升级还使用官方 `0.1.5-rc.1` Gateway/Registry 运行构建后的 companion，验证 Remote 分发、输入拒绝和卸载行为。完整 Web Host、浏览器与真实模型端到端流程尚未在新版本重跑；历史联调记录仍对应原记录版本。
 
 ## 相关文档
 

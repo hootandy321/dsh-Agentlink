@@ -11,7 +11,7 @@ import type { DshApi } from "./dsh-types.js";
 import { collectLockDiagnostics } from "./lock-doctor.js";
 
 const execFileAsync = promisify(execFile);
-const TESTED_CLI_VERSIONS = ["0.1.0-rc.6", "0.1.0-rc.7", "0.1.2-rc.1"] as const;
+const TESTED_CLI_VERSIONS = ["0.1.0-rc.6", "0.1.0-rc.7", "0.1.2-rc.1", "0.1.5-rc.1"] as const;
 
 export type CliVersionProbe = () => Promise<string | undefined>;
 
